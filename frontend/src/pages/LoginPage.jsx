@@ -258,17 +258,23 @@ export default function LoginPage({ onSignedIn }) {
         ) : (
           <div className="step stagger" key="code">
             <p className="lock-subtitle">
-              Code sent to <strong>{challenge.display_phone}</strong>.{" "}
+              {challenge.delivery === "sms"
+                ? "We sent a six-digit code to "
+                : "Code generated for "}
+              <strong>{challenge.display_phone}</strong>.{" "}
               <button type="button" className="link" onClick={changeNumber}>
                 Change
               </button>
             </p>
 
-            {/* There is no SMS, so the code has to appear somewhere. */}
-            <div className="demo-code" role="status">
-              <span>No SMS provider — your code is</span>
-              <strong>{challenge.demo_code}</strong>
-            </div>
+            {/* Only when nothing could carry the code. Once a provider is
+                configured the API stops returning it, and this disappears. */}
+            {challenge.delivery === "on_screen" && challenge.demo_code && (
+              <div className="demo-code" role="status">
+                <span>No SMS provider configured — your code is</span>
+                <strong>{challenge.demo_code}</strong>
+              </div>
+            )}
 
             <OtpInput
               value={code}
@@ -318,11 +324,23 @@ export default function LoginPage({ onSignedIn }) {
         )}
 
         <p className="lock-disclosure">
-          Demonstration only — this is not security. No account exists and no
-          session is created on the server; the API answers whether you sign in
-          or not, and your transactions sit unencrypted in{" "}
-          <span className="lock-hint">backend/data/expenses.db</span>. The code
-          is shown above because there is nothing to send it with.
+          {challenge?.delivery === "sms" ? (
+            <>
+              The code was sent by SMS and is not shown here. Signing in still
+              creates no session on the server — the API answers whether you
+              sign in or not, and your transactions sit unencrypted in{" "}
+              <span className="lock-hint">backend/data/expenses.db</span>.
+            </>
+          ) : (
+            <>
+              No SMS provider is configured, so the code is shown above instead
+              of sent. Copy{" "}
+              <span className="lock-hint">backend/sms.ini.example</span> to{" "}
+              <span className="lock-hint">backend/sms.ini</span> and add your
+              provider key to send it for real. Signing in creates no session
+              either way.
+            </>
+          )}
         </p>
       </form>
     </div>

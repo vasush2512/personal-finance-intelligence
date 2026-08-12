@@ -1,0 +1,48 @@
+; Copy this file to  backend/sms.ini  and fill in ONE provider.
+;
+; sms.ini is gitignored. Never commit it, and never paste these values into
+; a chat, an issue or a screenshot — an SMS auth token is somebody else's
+; phone bill.
+;
+; With no sms.ini (or provider = console) nothing is sent: the code is
+; written to the server log and shown in the browser. That is the default.
+;
+; Environment variables override this file, so a deployment can set
+; SMS_PROVIDER, SMS_TWILIO_ACCOUNT_SID and so on without shipping a file.
+;
+; Restart the backend after editing.
+
+[sms]
+
+; console | twilio | msg91 | fast2sms
+provider = console
+
+
+; --- Twilio -----------------------------------------------------------------
+; From https://console.twilio.com — Account SID and Auth Token on the
+; dashboard, and a number you own under Phone Numbers.
+;
+; Note for Indian numbers: Twilio requires DLT registration of your sender
+; and templates before it will deliver to +91. A trial account can only send
+; to numbers you have verified in the console.
+
+; twilio_account_sid = ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+; twilio_auth_token  = your_auth_token
+; twilio_from        = +15551234567
+
+
+; --- MSG91 (India) ----------------------------------------------------------
+; From https://control.msg91.com — Auth Key under Settings, and the ID of a
+; DLT-approved OTP template. The template holds the message text; this app
+; only supplies the code as a variable.
+
+; msg91_authkey     = your_auth_key
+; msg91_template_id = your_template_id
+
+
+; --- Fast2SMS (India) -------------------------------------------------------
+; From https://www.fast2sms.com — API key on the dashboard. The OTP route
+; sends "Your OTP is <code>" and needs no template approval, which makes it
+; the quickest one to get working.
+
+; fast2sms_api_key = your_api_key

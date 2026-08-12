@@ -30,6 +30,12 @@ def request_otp(body: OtpRequest):
             detail=str(error),
             headers={"Retry-After": str(error.retry_after)},
         )
+    except otp.DailyLimitReached as error:
+        raise HTTPException(status_code=429, detail=str(error))
+    except otp.DeliveryFailed as error:
+        # 502: the request was fine, the provider was not. Saying so is what
+        # lets someone tell a bad API key from a wrong phone number.
+        raise HTTPException(status_code=502, detail=str(error))
     except otp.InvalidPhone as error:
         raise HTTPException(status_code=422, detail=str(error))
 

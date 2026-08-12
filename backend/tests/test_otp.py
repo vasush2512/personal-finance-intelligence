@@ -22,6 +22,23 @@ def clean_store():
     otp.clear_all()
 
 
+@pytest.fixture
+def sent(monkeypatch):
+    """Pretend a provider is configured, and record what it was handed.
+
+    No test may make a real HTTP call to an SMS provider: that would cost
+    money, need credentials, and text a stranger.
+    """
+    messages = []
+
+    def fake_send(phone, code):
+        messages.append({"phone": phone, "code": code})
+        return "sms"
+
+    monkeypatch.setattr(otp.sms, "send_code", fake_send)
+    return messages
+
+
 # --- phone numbers --------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -52,6 +69,108 @@ def test_issues_a_six_digit_code():
     assert len(challenge["demo_code"]) == 6
     assert challenge["demo_code"].isdigit()
     assert challenge["display_phone"] == "+91 98765 43210"
+
+
+# --- delivery -------------------------------------------------------------
+
+def test_the_code_goes_to_the_provider(sent):
+    otp.request_code("+91 98765 43210", now=NOW)
+
+    assert len(sent) == 1
+    assert sent[0]["phone"] == "9876543210"
+    assert len(sent[0]["code"]) == 6
+
+
+def test_the_api_stops_returning_the_code_once_it_can_be_sent(sent):
+    """The single most important line in this file.
+
+    A one-time code the API hands back is not a one-time code.
+    """
+    challenge = otp.request_code("9876543210", now=NOW)
+
+    assert challenge["delivery"] == "sms"
+    assert challenge["demo_code"] is None
+
+
+def test_the_code_is_returned_only_when_nothing_can_carry_it():
+    challenge = otp.request_code("9876543210", now=NOW)
+
+    assert challenge["delivery"] == "on_screen"
+    assert challenge["demo_code"] is not None
+
+
+def test_the_sent_code_is_the_one_that_verifies(sent):
+    otp.request_code("9876543210", now=NOW)
+
+    result = otp.verify_code("9876543210", sent[0]["code"], now=NOW)
+
+    assert result["verified"] is True
+
+
+def test_a_refused_message_leaves_the_old_code_working(monkeypatch):
+    """A provider outage must not invalidate a code already in someone's hand."""
+    first = otp.request_code("9876543210", now=NOW)
+
+    def refuse(phone, code):
+        raise otp.sms.SmsError("provider is down")
+
+    monkeypatch.setattr(otp.sms, "send_code", refuse)
+    later = NOW + dt.timedelta(seconds=otp.RESEND_COOLDOWN_SECONDS + 1)
+
+    with pytest.raises(otp.DeliveryFailed):
+        otp.request_code("9876543210", now=later)
+
+    assert otp.verify_code("9876543210", first["demo_code"], now=later)["verified"]
+
+
+# --- daily cap ------------------------------------------------------------
+
+def test_a_number_cannot_be_texted_all_day(sent):
+    """Without this, an open endpoint is an SMS bomber billed to the owner."""
+    when = NOW
+    for _ in range(otp.MAX_SENDS_PER_PHONE_PER_DAY):
+        otp.request_code("9876543210", now=when)
+        when += dt.timedelta(seconds=otp.RESEND_COOLDOWN_SECONDS + 1)
+
+    with pytest.raises(otp.DailyLimitReached):
+        otp.request_code("9876543210", now=when)
+
+
+def test_the_cap_resets_the_next_day(sent):
+    when = NOW
+    for _ in range(otp.MAX_SENDS_PER_PHONE_PER_DAY):
+        otp.request_code("9876543210", now=when)
+        when += dt.timedelta(seconds=otp.RESEND_COOLDOWN_SECONDS + 1)
+
+    tomorrow = NOW + dt.timedelta(days=1)
+    assert otp.request_code("9876543210", now=tomorrow)["delivery"] == "sms"
+
+
+def test_the_cap_is_per_number(sent):
+    when = NOW
+    for _ in range(otp.MAX_SENDS_PER_PHONE_PER_DAY):
+        otp.request_code("9876543210", now=when)
+        when += dt.timedelta(seconds=otp.RESEND_COOLDOWN_SECONDS + 1)
+
+    # A different number is unaffected by the first one's exhaustion.
+    assert otp.request_code("9000000001", now=when)["delivery"] == "sms"
+
+
+def test_a_refused_message_still_counts_against_the_cap(monkeypatch):
+    """Otherwise a failing provider becomes an unlimited retry loop."""
+    def refuse(phone, code):
+        raise otp.sms.SmsError("nope")
+
+    monkeypatch.setattr(otp.sms, "send_code", refuse)
+
+    when = NOW
+    for _ in range(otp.MAX_SENDS_PER_PHONE_PER_DAY):
+        with pytest.raises(otp.DeliveryFailed):
+            otp.request_code("9876543210", now=when)
+        when += dt.timedelta(seconds=otp.RESEND_COOLDOWN_SECONDS + 1)
+
+    with pytest.raises(otp.DailyLimitReached):
+        otp.request_code("9876543210", now=when)
 
 
 def test_resending_too_soon_is_refused():

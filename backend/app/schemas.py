@@ -121,8 +121,10 @@ class OtpRequest(BaseModel):
 class OtpChallenge(BaseModel):
     """The issued challenge.
 
-    `demo_code` exists only because there is no SMS provider to deliver the
-    code with. A real API never returns the code it just issued.
+    `delivery` is `"sms"` when it went to the phone, `"on_screen"` when no
+    provider is configured. `demo_code` is populated only in the second case
+    — once anything can carry the code, the API stops handing it out, because
+    a one-time code the API returns is not one.
     """
 
     phone: str
@@ -130,7 +132,8 @@ class OtpChallenge(BaseModel):
     expires_in: int
     resend_in: int
     attempts_allowed: int
-    demo_code: str
+    delivery: str
+    demo_code: str | None = None
 
 
 class OtpVerify(BaseModel):

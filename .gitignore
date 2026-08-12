@@ -11,6 +11,9 @@ backend/data/model.joblib
 # Never commit a real bank statement
 backend/data/real_*.csv
 
+# SMS provider credentials. sms.ini.example is the template that IS committed.
+backend/sms.ini
+
 # Frontend
 node_modules/
 dist/

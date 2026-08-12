@@ -2,35 +2,45 @@
 
 READ THIS FIRST — what this is and is not
 -----------------------------------------
-This is a demonstration of an OTP flow, not an authentication system.
+Delivery depends on configuration, and so does how much this can be trusted.
 
-  * There is no SMS provider, so the code is returned to the caller and
-    shown on screen. A real implementation must NEVER return the code it
-    just issued — the whole point is that only the phone's owner sees it.
-  * Verifying does not create a session. No token is issued, nothing is
-    signed, and every other endpoint answers regardless. The dashboard gates
-    itself in the browser, which anyone can bypass.
-  * Codes live in a module-level dict, so restarting the server forgets
-    them, and a second worker process would not see them at all.
+  * With an SMS provider configured (see services/sms.py), the code goes to
+    the phone and is NEVER returned by the API or written to a log. That is
+    the only arrangement in which a one-time code means anything.
+  * With no provider — the default — the code comes back in the response and
+    is shown on screen, clearly labelled. Convenient for development, and
+    obviously not a secret.
 
-What it does model honestly, because these are the parts worth understanding:
-expiry, a cap on guesses, a resend cooldown, single use, and a comparison
-that does not leak how much of the code was right.
+Either way, verifying does not create a session. No token is issued, nothing
+is signed, and every other endpoint answers regardless; the dashboard gates
+itself in the browser, which anyone can bypass. Codes live in a module-level
+dict, so restarting the server forgets them and a second worker process
+would not see them.
+
+What is modelled properly, because these are the parts worth understanding:
+expiry, a cap on guesses, a resend cooldown, a daily send cap, single use,
+and a comparison that does not leak how much of the code was right.
 
 PRD section 3 keeps accounts and authentication as non-goals. This exists
-because it was asked for, and is deliberately self-describing about being
-theatre rather than a lock.
+because it was asked for.
 """
 
 import datetime as dt
 import hmac
-import random
 import re
+import secrets
+
+from app.services import sms
 
 CODE_LENGTH = 6
 CODE_TTL_SECONDS = 300        # five minutes
 RESEND_COOLDOWN_SECONDS = 30
 MAX_ATTEMPTS = 5
+
+# A cooldown stops a fast loop; this stops a slow one. Without it, an open
+# endpoint that sends real SMS is an SMS bomber pointed at any number
+# somebody types, billed to whoever owns the provider account.
+MAX_SENDS_PER_PHONE_PER_DAY = 10
 
 # Indian mobile numbers: ten digits starting 6-9, with the usual decorations.
 _DIGITS = re.compile(r"\D+")
@@ -64,6 +74,14 @@ class TooManyAttempts(OtpError):
     pass
 
 
+class DailyLimitReached(OtpError):
+    """This number has been sent enough codes for one day."""
+
+
+class DeliveryFailed(OtpError):
+    """The provider would not take the message."""
+
+
 class WrongCode(OtpError):
     def __init__(self, message, attempts_left):
         super().__init__(message)
@@ -72,6 +90,9 @@ class WrongCode(OtpError):
 
 # phone -> {"code", "expires_at", "sent_at", "attempts"}
 _challenges = {}
+
+# phone -> {"date": date, "count": int}
+_daily_sends = {}
 
 
 def normalize_phone(raw: str) -> str:
@@ -100,13 +121,30 @@ def format_phone(phone: str) -> str:
 
 
 def _generate_code() -> str:
-    """A zero-padded six-digit code.
+    """A zero-padded six-digit code from the cryptographic generator.
 
-    random, not secrets, and deliberately so: this is a demo whose code is
-    printed on the screen anyway. Real one-time codes must come from
-    `secrets`, which is built for values an attacker must not predict.
+    secrets, not random: once a code actually travels to a phone and is the
+    only thing standing between a stranger and a sign-in, it must not come
+    from a generator whose next output can be predicted from earlier ones.
     """
-    return f"{random.randint(0, 10**CODE_LENGTH - 1):0{CODE_LENGTH}d}"
+    return f"{secrets.randbelow(10**CODE_LENGTH):0{CODE_LENGTH}d}"
+
+
+def _count_send(phone: str, now: dt.datetime) -> None:
+    """Record a send, refusing once this number has had its day's worth."""
+    today = now.date()
+    record = _daily_sends.get(phone)
+
+    if record is None or record["date"] != today:
+        record = {"date": today, "count": 0}
+        _daily_sends[phone] = record
+
+    if record["count"] >= MAX_SENDS_PER_PHONE_PER_DAY:
+        raise DailyLimitReached(
+            "This number has been sent too many codes today. Try again tomorrow."
+        )
+
+    record["count"] += 1
 
 
 def request_code(raw_phone: str, now=None) -> dict:
@@ -127,7 +165,18 @@ def request_code(raw_phone: str, now=None) -> dict:
                 retry_after=int(RESEND_COOLDOWN_SECONDS - age) + 1,
             )
 
+    _count_send(phone, now)
+
     code = _generate_code()
+
+    # Send before storing. If the provider refuses, the previous challenge
+    # stays valid and the caller has not silently lost the code they already
+    # have in their hand.
+    try:
+        delivery = sms.send_code(phone, code)
+    except sms.SmsError as error:
+        raise DeliveryFailed(str(error))
+
     _challenges[phone] = {
         "code": code,
         "sent_at": now,
@@ -135,16 +184,23 @@ def request_code(raw_phone: str, now=None) -> dict:
         "attempts": 0,
     }
 
-    return {
+    challenge = {
         "phone": phone,
         "display_phone": format_phone(phone),
         "expires_in": CODE_TTL_SECONDS,
         "resend_in": RESEND_COOLDOWN_SECONDS,
         "attempts_allowed": MAX_ATTEMPTS,
-        # Returned only because there is nothing to deliver it with. Named to
-        # be impossible to mistake for something a real API would send.
-        "demo_code": code,
+        "delivery": delivery,
+        "demo_code": None,
     }
+
+    # The code comes back ONLY when nothing was able to carry it. The moment
+    # a provider is configured this stays null, because a one-time code the
+    # API hands out is not one.
+    if delivery == "on_screen":
+        challenge["demo_code"] = code
+
+    return challenge
 
 
 def verify_code(raw_phone: str, code: str, now=None) -> dict:
@@ -195,5 +251,6 @@ def forget(raw_phone: str) -> None:
 
 
 def clear_all() -> None:
-    """Wipe every challenge. For tests, so one cannot leak into the next."""
+    """Wipe every challenge and send count. For tests."""
     _challenges.clear()
+    _daily_sends.clear()
