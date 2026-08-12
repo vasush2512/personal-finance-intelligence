@@ -53,6 +53,21 @@ header.masthead p {
   font-size: 13px;
 }
 
+.masthead-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.masthead-right p {
+  margin: 0;
+}
+
+.lock-again {
+  font-size: 13px;
+  padding: 5px 12px;
+}
+
 /* --- navigation --------------------------------------------------------- */
 
 .nav {

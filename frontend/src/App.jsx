@@ -7,6 +7,7 @@ import { decodeSource, encodeSource } from "./components/Filters.jsx";
 import { PAGE_SIZE } from "./components/TransactionTable.jsx";
 import { formatMonth } from "./format.js";
 import FilesPage from "./pages/FilesPage.jsx";
+import LoginPage, { isUnlocked, lock } from "./pages/LoginPage.jsx";
 import ModelPage from "./pages/ModelPage.jsx";
 import OverviewPage from "./pages/OverviewPage.jsx";
 import TransactionsPage from "./pages/TransactionsPage.jsx";
@@ -25,6 +26,10 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export default function App() {
   const route = useRoute();
+
+  // Presentation only — see LoginPage. Nothing behind this is protected, so
+  // the gate lives entirely in the browser and never gates a request.
+  const [unlocked, setUnlocked] = useState(isUnlocked);
 
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -65,6 +70,9 @@ export default function App() {
    * than it is.
    */
   const loadDashboard = useCallback(async () => {
+    // Nothing to show behind the lock screen, so do not go and fetch it.
+    if (!unlocked) return;
+
     setLoading(true);
     try {
       // The source filter travels as upload_id + sheet, not as the single
@@ -103,7 +111,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [filters, offset]);
+  }, [filters, offset, unlocked]);
 
   useEffect(() => {
     loadDashboard();
@@ -273,6 +281,10 @@ export default function App() {
     "/files": sources.length,
   };
 
+  if (!unlocked) {
+    return <LoginPage onUnlock={() => setUnlocked(true)} />;
+  }
+
   return (
     <div className="app">
       <header className="masthead">
@@ -280,12 +292,23 @@ export default function App() {
           <h1>Expense Tracker</h1>
           <p>Upload a bank statement. Everything is categorized automatically.</p>
         </div>
-        {hasData && (
-          <p>
-            {summary.transaction_count.toLocaleString("en-IN")} transactions
-            {filters.month ? ` in ${formatMonth(filters.month)}` : " tracked"}
-          </p>
-        )}
+        <div className="masthead-right">
+          {hasData && (
+            <p>
+              {summary.transaction_count.toLocaleString("en-IN")} transactions
+              {filters.month ? ` in ${formatMonth(filters.month)}` : " tracked"}
+            </p>
+          )}
+          <button
+            className="lock-again"
+            onClick={() => {
+              lock();
+              setUnlocked(false);
+            }}
+          >
+            Lock
+          </button>
+        </div>
       </header>
 
       <NavBar route={route} counts={navCounts} />

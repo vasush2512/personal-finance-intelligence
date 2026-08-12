@@ -1,0 +1,475 @@
+/**
+ * The lock screen.
+ *
+ * Everything here animates transform, opacity or filter only — those are the
+ * properties a browser can hand to the GPU. Animating width, top or
+ * background-position instead forces a layout or paint on every frame, which
+ * is what makes "fancy" pages stutter.
+ *
+ * Every animation is switched off under prefers-reduced-motion at the bottom
+ * of this file. Motion this large is a genuine accessibility problem for
+ * some people, and a login screen is not optional to look at.
+ */
+
+.lock {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: hidden;
+  background: #070b14;
+  color: #eef2f8;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* --- the drifting colour field ------------------------------------------ */
+
+/*
+ * Three big blurred blobs on slow, differently-timed loops. Because the
+ * durations do not divide into each other, the composition never visibly
+ * repeats — the eye cannot find the loop point.
+ */
+.lock-aurora {
+  position: absolute;
+  inset: -30%;
+  filter: blur(80px);
+  /* Judged from a screenshot, not from taste: at 0.55 the colour was
+     invisible against the near-black ground and the page read as flat. */
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.blob {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.blob-1 {
+  background: radial-gradient(circle at 30% 30%, #2f86ef 0%, #1c4f9c 40%, transparent 70%);
+  top: -6%;
+  left: -4%;
+  animation: drift-1 23s ease-in-out infinite;
+}
+
+.blob-2 {
+  background: radial-gradient(circle at 70% 40%, #1dc78a 0%, #127954 42%, transparent 70%);
+  bottom: -12%;
+  right: -6%;
+  animation: drift-2 31s ease-in-out infinite;
+}
+
+.blob-3 {
+  background: radial-gradient(circle at 50% 50%, #6a54e8 0%, #3a2c8f 45%, transparent 72%);
+  top: 18%;
+  right: 10%;
+  animation: drift-3 27s ease-in-out infinite;
+}
+
+@keyframes drift-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(9vw, 7vh, 0) scale(1.16); }
+}
+
+@keyframes drift-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50%      { transform: translate3d(-11vw, -6vh, 0) scale(0.92); }
+}
+
+@keyframes drift-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); }
+  50%      { transform: translate3d(-7vw, 10vh, 0) scale(1.2); }
+}
+
+/* A faint grid, faded out at the edges so it never ends in a hard line. */
+.lock-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%);
+  pointer-events: none;
+}
+
+/* --- transactions drifting past ----------------------------------------- */
+
+/*
+ * Thematic rather than decorative: the things floating by are the things the
+ * app is about. They rise, fade in, fade out, and are removed from the
+ * accessibility tree — a screen reader announcing forty rupee amounts before
+ * the password field would be hostile.
+ */
+.lock-ticker {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/*
+ * Chips rise in two side bands, clear of the card in the middle. Scattering
+ * them across the full width put one behind the card, where it looked like a
+ * rendering fault rather than a background element.
+ *
+ * translateX(-50%) means `left` is the chip's centre, so a chip near the edge
+ * cannot hang off it and get clipped mid-word.
+ */
+.ticker-chip {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: rgba(238, 242, 248, 0.72);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: float-up linear infinite;
+}
+
+.ticker-chip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.ticker-chip .amount {
+  font-variant-numeric: tabular-nums;
+  color: rgba(238, 242, 248, 0.95);
+}
+
+/* Keeps the -50% centring while the animation drives the vertical travel. */
+@keyframes float-up {
+  0%   { transform: translate3d(-50%, 18vh, 0);  opacity: 0; }
+  12%  { opacity: 0.9; }
+  88%  { opacity: 0.9; }
+  100% { transform: translate3d(-50%, -100vh, 0); opacity: 0; }
+}
+
+/* --- the card ------------------------------------------------------------ */
+
+.lock-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 40px 36px 30px;
+  border-radius: 20px;
+  background: rgba(17, 23, 38, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  animation: card-in 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes card-in {
+  from { transform: translate3d(0, 26px, 0) scale(0.97); opacity: 0; }
+  to   { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+}
+
+/*
+ * A highlight that travels around the border. It is a conic gradient rotated
+ * behind the card and masked to a 1px ring, so it reads as light moving along
+ * an edge rather than a spinning shape.
+ */
+.lock-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--angle, 0deg),
+    transparent 60%,
+    rgba(42, 120, 214, 0.85),
+    rgba(27, 175, 122, 0.85),
+    transparent 78%
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  animation: sweep 6s linear infinite;
+  pointer-events: none;
+}
+
+/* A registered custom property is what makes an angle animatable at all. */
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes sweep {
+  to { --angle: 360deg; }
+}
+
+/* --- the mark ------------------------------------------------------------ */
+
+.lock-mark {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 44px;
+  margin-bottom: 22px;
+}
+
+.lock-mark span {
+  width: 9px;
+  border-radius: 3px 3px 1px 1px;
+  transform-origin: bottom;
+  animation: bar-grow 2.6s ease-in-out infinite;
+}
+
+/* Bars rise and settle on a stagger, like a chart drawing itself. */
+.lock-mark span:nth-child(1) { height: 40%; background: #2a78d6; animation-delay: 0s; }
+.lock-mark span:nth-child(2) { height: 70%; background: #3987e5; animation-delay: 0.16s; }
+.lock-mark span:nth-child(3) { height: 52%; background: #1baf7a; animation-delay: 0.32s; }
+.lock-mark span:nth-child(4) { height: 100%; background: #eda100; animation-delay: 0.48s; }
+.lock-mark span:nth-child(5) { height: 62%; background: #e87ba4; animation-delay: 0.64s; }
+
+@keyframes bar-grow {
+  0%, 100% { transform: scaleY(0.55); opacity: 0.65; }
+  45%      { transform: scaleY(1);    opacity: 1; }
+}
+
+/* --- copy ---------------------------------------------------------------- */
+
+.lock-title {
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -0.022em;
+  margin: 0 0 7px;
+}
+
+.lock-subtitle {
+  margin: 0 0 26px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(238, 242, 248, 0.62);
+}
+
+/* Children fade up one after another instead of all at once. */
+.stagger > * {
+  animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stagger > *:nth-child(1) { animation-delay: 0.10s; }
+.stagger > *:nth-child(2) { animation-delay: 0.17s; }
+.stagger > *:nth-child(3) { animation-delay: 0.24s; }
+.stagger > *:nth-child(4) { animation-delay: 0.31s; }
+.stagger > *:nth-child(5) { animation-delay: 0.38s; }
+.stagger > *:nth-child(6) { animation-delay: 0.45s; }
+
+@keyframes rise {
+  from { transform: translate3d(0, 14px, 0); opacity: 0; }
+  to   { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* --- fields -------------------------------------------------------------- */
+
+.lock-field {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.lock-field input {
+  width: 100%;
+  padding: 17px 15px 8px;
+  font: inherit;
+  font-size: 15px;
+  color: #eef2f8;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.lock-field input:focus {
+  border-color: rgba(42, 120, 214, 0.85);
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 0 0 4px rgba(42, 120, 214, 0.16);
+}
+
+/*
+ * The label sits inside the field and shrinks upward once there is content.
+ * :placeholder-shown is what makes that work with no JavaScript — the field
+ * carries a blank placeholder purely so the selector has something to test.
+ */
+.lock-field label {
+  position: absolute;
+  left: 15px;
+  top: 14px;
+  font-size: 15px;
+  color: rgba(238, 242, 248, 0.5);
+  pointer-events: none;
+  transform-origin: left top;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.lock-field input:focus + label,
+.lock-field input:not(:placeholder-shown) + label {
+  transform: translateY(-9px) scale(0.74);
+  color: rgba(122, 178, 245, 0.95);
+}
+
+/* --- button -------------------------------------------------------------- */
+
+.lock-button {
+  position: relative;
+  width: 100%;
+  padding: 13px 18px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  background: linear-gradient(120deg, #2a78d6, #1baf7a);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s;
+  box-shadow: 0 10px 26px rgba(42, 120, 214, 0.33);
+}
+
+.lock-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(42, 120, 214, 0.42);
+}
+
+.lock-button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.lock-button:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+
+/* A light sweep across the button on hover. */
+.lock-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.32) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.7s ease;
+}
+
+.lock-button:hover:not(:disabled)::after {
+  transform: translateX(100%);
+}
+
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  vertical-align: -2px;
+  margin-right: 9px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- error --------------------------------------------------------------- */
+
+.lock-error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #ff9a9a;
+  min-height: 18px;
+}
+
+/* Two quick shakes, not a long wobble — enough to notice, over fast. */
+.shake {
+  animation: shake 0.36s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(4px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
+  40%, 60% { transform: translate3d(7px, 0, 0); }
+}
+
+/* --- honesty note -------------------------------------------------------- */
+
+.lock-disclosure {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: rgba(238, 242, 248, 0.44);
+}
+
+.lock-hint {
+  color: rgba(238, 242, 248, 0.8);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+/* --- leaving ------------------------------------------------------------- */
+
+/*
+ * The whole screen lifts and blurs out rather than cutting, so the dashboard
+ * underneath feels revealed rather than swapped in.
+ */
+.lock.unlocking {
+  animation: lift-away 0.65s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes lift-away {
+  to { transform: scale(1.06); opacity: 0; filter: blur(12px); }
+}
+
+/* --- reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .lock *,
+  .lock *::before,
+  .lock *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* The chips exist only as motion, so without it they are just clutter. */
+  .lock-ticker {
+    display: none;
+  }
+
+  .lock-card,
+  .stagger > * {
+    opacity: 1;
+    transform: none;
+  }
+}
