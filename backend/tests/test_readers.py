@@ -227,6 +227,101 @@ def test_a_corrupt_excel_file_is_reported_cleanly():
         parse_statement(b"PK\x03\x04 and then nonsense", "statement.xlsx")
 
 
+# --- multi-sheet workbooks ------------------------------------------------
+
+def workbook_with_sheets(sheets):
+    """sheets: {name: rows}. Builds a real multi-tab .xlsx."""
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    workbook.remove(workbook.active)
+    for name, rows in sheets.items():
+        sheet = workbook.create_sheet(title=name)
+        for row in rows:
+            sheet.append(row)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+HEADER = ["Date", "Narration", "Withdrawal Amt.", "Deposit Amt."]
+
+
+def test_every_sheet_is_imported_not_just_the_first():
+    """One month per tab is a normal export shape."""
+    data = workbook_with_sheets(
+        {
+            "May": [HEADER, ["05/05/2026", "SWIGGY ORDER", "409.50", ""]],
+            "June": [HEADER, ["06/06/2026", "BLINKIT GROCERIES", "1051.00", ""]],
+            "July": [HEADER, ["07/07/2026", "UBER RIDE", "250.00", ""]],
+        }
+    )
+
+    transactions, _ = parse_statement(data, "statement.xlsx")
+
+    assert len(transactions) == 3
+    assert {row["date"] for row in transactions} == {
+        "2026-05-05",
+        "2026-06-06",
+        "2026-07-07",
+    }
+
+
+def test_a_summary_tab_is_passed_over_not_fatal():
+    """A cover sheet has no header row. It must not fail the whole upload."""
+    data = workbook_with_sheets(
+        {
+            "Summary": [["Account Holder", "A Person"], ["Closing Balance", "12000"]],
+            "Transactions": [HEADER, ["05/05/2026", "SWIGGY ORDER", "409.50", ""]],
+        }
+    )
+
+    transactions, _ = parse_statement(data, "statement.xlsx")
+
+    assert len(transactions) == 1
+
+
+def test_a_workbook_with_no_transaction_table_still_fails():
+    """Passing over bad sheets must not turn a wrong file into a silent no-op."""
+    data = workbook_with_sheets(
+        {
+            "Summary": [["Account Holder", "A Person"]],
+            "Notes": [["Nothing", "here"]],
+        }
+    )
+
+    with pytest.raises(UnparseableStatement):
+        parse_statement(data, "statement.xlsx")
+
+
+def test_skipped_rows_are_totalled_across_sheets():
+    data = workbook_with_sheets(
+        {
+            "May": [HEADER, ["05/05/2026", "SWIGGY", "409.50", ""], ["", "TOTAL", "", ""]],
+            "June": [HEADER, ["06/06/2026", "BLINKIT", "1051.00", ""], ["", "TOTAL", "", ""]],
+        }
+    )
+
+    transactions, skipped = parse_statement(data, "statement.xlsx")
+
+    assert len(transactions) == 2
+    assert skipped == 2
+
+
+def test_sheets_repeating_a_transaction_still_fingerprint_alike():
+    """An overlapping row on two tabs dedupes on import, as it should."""
+    data = workbook_with_sheets(
+        {
+            "May": [HEADER, ["05/05/2026", "SWIGGY ORDER", "409.50", ""]],
+            "May (copy)": [HEADER, ["05/05/2026", "SWIGGY ORDER", "409.50", ""]],
+        }
+    )
+
+    transactions, _ = parse_statement(data, "statement.xlsx")
+
+    assert len(transactions) == 2
+    assert transactions[0]["fingerprint"] == transactions[1]["fingerprint"]
+
+
 # --- shared behaviour -----------------------------------------------------
 
 def test_an_empty_file_of_any_format_is_rejected():

@@ -5,7 +5,7 @@ parsing, fingerprinting, the rules, the model — works on a list of rows.
 So supporting a new format means writing one function that produces that
 list, and nothing else in the app changes.
 
-Supported: CSV (and other delimited text), JSON, Excel .xlsx.
+Supported: CSV (and other delimited text), JSON, Excel .xlsx (every sheet).
 
 The contract is the same as the parser's: never raise on messy content.
 Only a file that cannot be read as a table at all raises, and that error
@@ -176,8 +176,12 @@ def _flatten(value):
 
 # --- excel ----------------------------------------------------------------
 
-def read_excel(file_bytes: bytes):
-    """First worksheet of an .xlsx, as rows of cell values.
+def read_excel_sheets(file_bytes: bytes):
+    """Every worksheet of an .xlsx, as (name, rows) pairs.
+
+    All of them, not just the first: banks and exporters routinely put one
+    month per tab, and reading only sheet 1 silently loses the rest — the
+    worst kind of bug, because the import still reports success.
 
     read_only keeps a large workbook from being built in memory all at once,
     and data_only asks for the cached result of a formula rather than the
@@ -197,13 +201,23 @@ def read_excel(file_bytes: bytes):
         raise UnreadableFile(f"Could not open the Excel file: {error}")
 
     try:
-        worksheet = workbook[workbook.sheetnames[0]]
-        return [
-            ["" if cell is None else cell for cell in row]
-            for row in worksheet.iter_rows(values_only=True)
-        ]
+        sheets = []
+        for name in workbook.sheetnames:
+            rows = [
+                ["" if cell is None else cell for cell in row]
+                for row in workbook[name].iter_rows(values_only=True)
+            ]
+            if rows:
+                sheets.append((name, rows))
+        return sheets
     finally:
         workbook.close()
+
+
+def read_excel(file_bytes: bytes):
+    """First worksheet only. Kept for callers that want a single table."""
+    sheets = read_excel_sheets(file_bytes)
+    return sheets[0][1] if sheets else []
 
 
 # --- entry point ----------------------------------------------------------
@@ -215,14 +229,29 @@ READERS = {
 }
 
 
-def read_rows(file_bytes: bytes, filename=None):
-    """Any supported file to a list of rows. Raises UnreadableFile."""
+def read_sheets(file_bytes: bytes, filename=None):
+    """Any supported file to a list of (sheet name, rows).
+
+    Only Excel can hold more than one table, so the other formats return a
+    single entry. Callers treat every format the same way and get multi-sheet
+    support for nothing.
+    """
     if not file_bytes:
         raise UnreadableFile("File is empty.")
 
-    reader = READERS[detect_format(file_bytes, filename)]
-    rows = reader(file_bytes)
+    kind = detect_format(file_bytes, filename)
 
-    if not rows:
+    if kind == "excel":
+        sheets = read_excel_sheets(file_bytes)
+    else:
+        sheets = [(filename or "file", READERS[kind](file_bytes))]
+
+    sheets = [(name, rows) for name, rows in sheets if rows]
+    if not sheets:
         raise UnreadableFile("File is empty.")
-    return rows
+    return sheets
+
+
+def read_rows(file_bytes: bytes, filename=None):
+    """Any supported file to a list of rows, first table only."""
+    return read_sheets(file_bytes, filename)[0][1]

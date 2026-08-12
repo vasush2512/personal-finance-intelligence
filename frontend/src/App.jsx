@@ -29,6 +29,7 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [savingId, setSavingId] = useState(null);
   const [lastUpload, setLastUpload] = useState(null);
   const [toast, setToast] = useState(null);
@@ -92,20 +93,57 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchInput, filters.search]);
 
-  async function handleUpload(file) {
+  /**
+   * Import a batch of files, then refresh once.
+   *
+   * Sequential rather than parallel on purpose: imports race on the same
+   * fingerprint table, and two files sharing a transaction could both think
+   * theirs is new. One at a time makes the duplicate counts honest.
+   *
+   * A file that fails does not abort the batch — the other statements still
+   * import, and the failure is named in the summary.
+   */
+  async function handleUpload(files) {
     setUploading(true);
+    const totals = { imported: 0, duplicates: 0, skipped: 0, files: 0, failures: [] };
+
     try {
-      const result = await api.uploadStatement(file);
-      setLastUpload(result);
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setUploadProgress({
+          current: index + 1,
+          total: files.length,
+          filename: file.name,
+        });
+
+        try {
+          const result = await api.uploadStatement(file);
+          totals.imported += result.imported;
+          totals.duplicates += result.duplicates;
+          totals.skipped += result.skipped;
+          totals.files += 1;
+        } catch (error) {
+          totals.failures.push({ filename: file.name, message: error.message });
+        }
+      }
+
+      setLastUpload(totals);
       setOffset(0);
       await loadDashboard();
-      if (result.imported > 0) {
-        showSuccess(`Imported ${result.imported} transactions.`);
+
+      if (totals.imported > 0) {
+        showSuccess(`Imported ${totals.imported} transactions.`);
       }
-    } catch (error) {
-      showError(error);
+      if (totals.failures.length > 0) {
+        showError(
+          new Error(
+            `${totals.failures.length} file(s) could not be imported. See the details above the summary.`
+          )
+        );
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -161,7 +199,12 @@ export default function App() {
       </header>
 
       <div className="stack">
-        <UploadBox onUpload={handleUpload} busy={uploading} lastResult={lastUpload} />
+        <UploadBox
+          onUpload={handleUpload}
+          busy={uploading}
+          progress={uploadProgress}
+          lastResult={lastUpload}
+        />
 
         {isFirstLoad && <p className="loading">Loading…</p>}
 

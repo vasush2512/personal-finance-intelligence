@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.services.normalize import fingerprint, normalize_description
-from app.services.readers import UnreadableFile, read_rows
+from app.services.readers import UnreadableFile, read_sheets
 
 # --- column aliases -------------------------------------------------------
 
@@ -240,17 +240,43 @@ def parse_statement(file_bytes, filename=None):
     """Entry point. bytes -> (transactions, skipped_count).
 
     The file may be CSV, JSON or Excel; services/readers.py works out which
-    and hands back rows. Everything from here down is format-blind.
+    and hands back one table per sheet. Everything from here down is
+    format-blind.
 
-    Raises UnparseableStatement only when the file cannot be read at all or
-    no header row can be found. Bad individual rows are counted, never
-    raised.
+    A workbook with one month per tab is imported in full. Sheets that are
+    not transaction tables — a cover page, a summary tab — have no header row
+    and are passed over rather than failing the upload.
+
+    Raises UnparseableStatement only when the file cannot be read at all, or
+    when no sheet in it holds a transaction table. Bad individual rows are
+    counted, never raised.
     """
     try:
-        rows = read_rows(file_bytes, filename)
+        sheets = read_sheets(file_bytes, filename)
     except UnreadableFile as error:
         raise UnparseableStatement(str(error), detected_columns=error.detected_columns)
 
+    transactions, skipped = [], 0
+    first_failure = None
+
+    for _name, rows in sheets:
+        try:
+            sheet_transactions, sheet_skipped = parse_sheet(rows)
+        except UnparseableStatement as error:
+            first_failure = first_failure or error
+            continue
+        transactions.extend(sheet_transactions)
+        skipped += sheet_skipped
+
+    # Every sheet was unreadable, so the file really is the wrong shape.
+    if not transactions and first_failure is not None:
+        raise first_failure
+
+    return transactions, skipped
+
+
+def parse_sheet(rows):
+    """One table of rows -> (transactions, skipped_count)."""
     header_index, header_cells = find_header_row(rows)
     columns = map_columns(header_cells)
 
