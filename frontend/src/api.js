@@ -69,16 +69,16 @@ export function getTransactions(filters) {
   return request(`/api/transactions${queryString(filters)}`);
 }
 
-export function getSummary(month) {
-  return request(`/api/summary${queryString({ month })}`);
+export function getSummary(params) {
+  return request(`/api/summary${queryString(params)}`);
 }
 
-export function getTrends() {
-  return request("/api/trends");
+export function getTrends(params) {
+  return request(`/api/trends${queryString(params)}`);
 }
 
-export function getAnomalies() {
-  return request("/api/anomalies");
+export function getAnomalies(params) {
+  return request(`/api/anomalies${queryString(params)}`);
 }
 
 /** The files and worksheets rows actually came from. */

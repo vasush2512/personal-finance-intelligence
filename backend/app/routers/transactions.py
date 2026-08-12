@@ -46,19 +46,9 @@ def month_bounds(month: str):
 
 def build_filters(month, category, search, direction, upload_id=None, sheet=None):
     """Translate the query string into a list of SQLAlchemy conditions."""
-    conditions = []
-
-    if upload_id is not None:
-        conditions.append(Transaction.upload_id == upload_id)
-
-    if sheet is not None:
-        # An explicit empty string means "the rows with no sheet", which is
-        # every CSV and JSON row. Without this you could filter to a
-        # workbook's tabs but never to a plain file's rows.
-        if sheet == "":
-            conditions.append(Transaction.sheet_name.is_(None))
-        else:
-            conditions.append(Transaction.sheet_name == sheet)
+    # Same source rules the charts use, so the table can never disagree
+    # with the totals above it.
+    conditions = aggregations.source_conditions(upload_id=upload_id, sheet=sheet)
 
     if month:
         start, end = month_bounds(month)

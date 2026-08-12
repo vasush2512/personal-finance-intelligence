@@ -7,6 +7,7 @@ filtering by them returns the right rows.
 
 import datetime as dt
 import io
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -156,6 +157,58 @@ def test_file_and_sheet_filters_combine(session):
 
     # The CSV upload has no sheet called June, so this is correctly empty.
     assert count_with(session, upload_id=other["upload_id"], sheet="June") == 0
+
+
+# --- the whole dashboard follows the filter -------------------------------
+
+def test_totals_follow_the_source_filter(session):
+    """The cards must not describe the whole database while the table shows
+    one file. That mismatch is worse than having no filter."""
+    import_statement(session, "book.xlsx", workbook_bytes(THREE_TABS))
+    csv_upload = import_statement(session, "statement.csv", CSV_BYTES)
+
+    everything = aggregations.summary(session)
+    just_csv = aggregations.summary(session, upload_id=csv_upload["upload_id"])
+
+    assert everything["transaction_count"] == 4
+    assert just_csv["transaction_count"] == 1
+    assert just_csv["total_spent"] < everything["total_spent"]
+
+
+def test_totals_follow_a_worksheet(session):
+    import_statement(session, "book.xlsx", workbook_bytes(THREE_TABS))
+
+    june = aggregations.summary(session, sheet="June")
+
+    assert june["transaction_count"] == 1
+    assert june["by_category"][0]["category"] == "entertainment"
+
+
+def test_the_trend_chart_follows_the_source_filter(session):
+    import_statement(session, "book.xlsx", workbook_bytes(THREE_TABS))
+    csv_upload = import_statement(session, "statement.csv", CSV_BYTES)
+
+    scoped = aggregations.monthly_trends(session, upload_id=csv_upload["upload_id"])
+
+    assert [point["month"] for point in scoped] == ["2026-05"]
+
+
+def test_top_merchants_follow_the_source_filter(session):
+    import_statement(session, "book.xlsx", workbook_bytes(THREE_TABS))
+
+    merchants = aggregations.top_merchants(session, sheet="July")
+
+    assert [row["merchant"] for row in merchants] == ["apollo"]
+
+
+def test_an_unknown_source_yields_zeros_not_errors(session):
+    import_statement(session, "statement.csv", CSV_BYTES)
+
+    scoped = aggregations.summary(session, upload_id=9999)
+
+    assert scoped["transaction_count"] == 0
+    assert scoped["total_spent"] == Decimal("0.00")
+    assert scoped["by_category"] == []
 
 
 def test_deleting_an_upload_removes_it_from_the_options(session):

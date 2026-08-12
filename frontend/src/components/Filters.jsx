@@ -49,9 +49,13 @@ export default function Filters({
   const isFiltered =
     filters.month || filters.category || filters.source || searchValue;
 
-  // Only worth showing when there is more than one place rows came from.
+  // Only worth showing when there is more than one place rows came from —
+  // but always while one is selected, or the filter that is scoping the page
+  // would have no visible control.
   const showSource =
-    sources.length > 1 || (sources[0] && sources[0].sheets.length > 1);
+    Boolean(filters.source) ||
+    sources.length > 1 ||
+    (sources[0] && sources[0].sheets.length > 1);
 
   return (
     <div className="filters">

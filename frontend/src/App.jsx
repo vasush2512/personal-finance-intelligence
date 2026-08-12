@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as api from "./api.js";
 import AnomaliesPanel from "./components/AnomaliesPanel.jsx";
 import CategoryChart from "./components/CategoryChart.jsx";
-import Filters, { decodeSource } from "./components/Filters.jsx";
+import Filters, { decodeSource, encodeSource } from "./components/Filters.jsx";
 import SummaryCards from "./components/SummaryCards.jsx";
 import Toast from "./components/Toast.jsx";
 import TopMerchants from "./components/TopMerchants.jsx";
@@ -66,18 +66,23 @@ export default function App() {
       // The source filter travels as upload_id + sheet, not as the single
       // value the dropdown uses, so unpack it before it reaches the API.
       const { source, ...rest } = filters;
+      const sourceQuery = decodeSource(source);
+
       const transactionQuery = {
         ...rest,
-        ...decodeSource(source),
+        ...sourceQuery,
         limit: PAGE_SIZE,
         offset,
       };
 
       const [summaryData, trendData, anomalyData, sourceData, categoryData, pageData] =
         await Promise.all([
-          api.getSummary(filters.month),
-          api.getTrends(),
-          api.getAnomalies(),
+          // Source reaches the cards, the charts and the anomalies too. A
+          // filter that moved only the table would leave the totals above it
+          // describing a different set of transactions.
+          api.getSummary({ month: filters.month, ...sourceQuery }),
+          api.getTrends(sourceQuery),
+          api.getAnomalies(sourceQuery),
           api.getSources(),
           api.getCategories(),
           api.getTransactions(transactionQuery),
@@ -127,6 +132,7 @@ export default function App() {
   async function handleUpload(files) {
     setUploading(true);
     const totals = { imported: 0, duplicates: 0, skipped: 0, files: 0, failures: [] };
+    const results = [];
 
     try {
       for (let index = 0; index < files.length; index += 1) {
@@ -139,6 +145,7 @@ export default function App() {
 
         try {
           const result = await api.uploadStatement(file);
+          results.push(result);
           totals.imported += result.imported;
           totals.duplicates += result.duplicates;
           totals.skipped += result.skipped;
@@ -150,7 +157,21 @@ export default function App() {
 
       setLastUpload(totals);
       setOffset(0);
-      await loadDashboard();
+
+      // Show what was just added rather than leaving it buried in the whole
+      // database. With 100,000 rows already stored, 29 new ones move nothing
+      // visible, and the upload reads as having failed.
+      //
+      // Only when a single file actually contributed rows: scoping to one of
+      // several files would hide the others, and an upload that imported
+      // nothing has no rows to scope to.
+      const imported = results.filter((result) => result && result.imported > 0);
+      if (imported.length === 1) {
+        setFilters({ ...EMPTY_FILTERS, source: encodeSource(imported[0].upload_id) });
+        setSearchInput("");
+      } else {
+        await loadDashboard();
+      }
 
       if (totals.imported > 0) {
         showSuccess(`Imported ${totals.imported} transactions.`);
@@ -208,6 +229,15 @@ export default function App() {
     setOffset(0);
   }
 
+  /** "september_2026.csv" or "book.xlsx › June", when a source is selected. */
+  const scope = (() => {
+    if (!filters.source) return null;
+    const { upload_id, sheet } = decodeSource(filters.source);
+    const source = sources.find((entry) => entry.upload_id === upload_id);
+    if (!source) return null;
+    return sheet ? `${source.filename} › ${sheet}` : source.filename;
+  })();
+
   const months = trends.map((point) => point.month).reverse();
   const hasData = summary && summary.transaction_count > 0;
   const isFirstLoad = loading && !summary;
@@ -245,6 +275,21 @@ export default function App() {
               <br />
               <code>backend/data/sample_statement.csv</code>
             </p>
+          </div>
+        )}
+
+        {/* The page is scoped to one file or tab. Say so where the numbers
+            are, not only in the filter row further down — otherwise the
+            totals look like the totals for everything. */}
+        {scope && (
+          <div className="card scope-banner">
+            <span>
+              Showing <strong>{scope}</strong> only. The totals, charts and
+              anomalies below cover just this.
+            </span>
+            <button onClick={() => changeFilters(EMPTY_FILTERS)}>
+              Show everything
+            </button>
           </div>
         )}
 

@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.ml.anomalies import LOOKBACK_DAYS, detect_anomalies
 from app.models import Transaction
+from app.services.aggregations import source_conditions
 
 
-def as_plain_rows(session: Session, today=None):
+def as_plain_rows(session: Session, today=None, **source):
     """The rows detect_anomalies can actually use, in the shape it expects.
 
     Only debits inside the lookback window matter — the detector discards
@@ -30,8 +31,11 @@ def as_plain_rows(session: Session, today=None):
     cutoff = today - dt.timedelta(days=LOOKBACK_DAYS)
 
     transactions = session.execute(
-        select(Transaction)
-        .where(Transaction.direction == "debit", Transaction.date >= cutoff)
+        select(Transaction).where(
+            Transaction.direction == "debit",
+            Transaction.date >= cutoff,
+            *source_conditions(**source),
+        )
     ).scalars().all()
 
     return [
@@ -47,6 +51,12 @@ def as_plain_rows(session: Session, today=None):
     ]
 
 
-def find_anomalies(session: Session, today=None):
-    """Unusually large debits, newest first, each with a readable reason."""
-    return detect_anomalies(as_plain_rows(session, today), today=today)
+def find_anomalies(session: Session, today=None, **source):
+    """Unusually large debits, newest first, each with a readable reason.
+
+    Under a source filter the baselines are computed from that file's rows
+    only. That is the honest reading of "is this transaction unusual for
+    this statement", but it does mean one month's file judges a charge
+    against one month of history — a narrower baseline than the full six.
+    """
+    return detect_anomalies(as_plain_rows(session, today, **source), today=today)

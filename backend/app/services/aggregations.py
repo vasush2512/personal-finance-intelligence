@@ -44,6 +44,27 @@ def month_conditions(month):
     return [Transaction.date >= start, Transaction.date < end]
 
 
+def source_conditions(upload_id=None, sheet=None):
+    """Restrict to one uploaded file, or one worksheet inside it.
+
+    `sheet=""` is not the same as `sheet=None`: the empty string means "rows
+    that came from a single-table file", which is every CSV and JSON row,
+    while None means no restriction at all.
+    """
+    conditions = []
+
+    if upload_id is not None:
+        conditions.append(Transaction.upload_id == upload_id)
+
+    if sheet is not None:
+        if sheet == "":
+            conditions.append(Transaction.sheet_name.is_(None))
+        else:
+            conditions.append(Transaction.sheet_name == sheet)
+
+    return conditions
+
+
 def spending_conditions():
     return [
         Transaction.direction == "debit",
@@ -66,21 +87,29 @@ def _total(session: Session, conditions):
     return total if total is not None else ZERO
 
 
-def total_spent(session: Session, month=None) -> Decimal:
-    return _total(session, spending_conditions() + month_conditions(month))
+def total_spent(session: Session, month=None, **source) -> Decimal:
+    return _total(
+        session,
+        spending_conditions() + month_conditions(month) + source_conditions(**source),
+    )
 
 
-def total_income(session: Session, month=None) -> Decimal:
-    return _total(session, income_conditions() + month_conditions(month))
+def total_income(session: Session, month=None, **source) -> Decimal:
+    return _total(
+        session,
+        income_conditions() + month_conditions(month) + source_conditions(**source),
+    )
 
 
-def transaction_count(session: Session, month=None) -> int:
+def transaction_count(session: Session, month=None, **source) -> int:
     return session.execute(
-        select(func.count(Transaction.id)).where(*month_conditions(month))
+        select(func.count(Transaction.id)).where(
+            *(month_conditions(month) + source_conditions(**source))
+        )
     ).scalar_one()
 
 
-def totals_by_category(session: Session, month=None):
+def totals_by_category(session: Session, month=None, **source):
     """Spending per category, biggest first."""
     rows = session.execute(
         select(
@@ -88,7 +117,7 @@ def totals_by_category(session: Session, month=None):
             func.sum(Transaction.amount),
             func.count(Transaction.id),
         )
-        .where(*(spending_conditions() + month_conditions(month)))
+        .where(*(spending_conditions() + month_conditions(month) + source_conditions(**source)))
         .group_by(Transaction.category)
     ).all()
 
@@ -129,13 +158,13 @@ def _merchant_expression():
     )
 
 
-def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT):
+def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT, **source):
     """Biggest merchants by total spend."""
     merchant = _merchant_expression()
 
     rows = session.execute(
         select(merchant, func.sum(Transaction.amount), func.count(Transaction.id))
-        .where(*(spending_conditions() + month_conditions(month)))
+        .where(*(spending_conditions() + month_conditions(month) + source_conditions(**source)))
         .group_by(merchant)
         .order_by(func.sum(Transaction.amount).desc())
         .limit(limit)
@@ -209,32 +238,40 @@ def sources(session: Session):
     return list(uploads.values())
 
 
-def summary(session: Session, month=None) -> dict:
-    """Everything the summary cards and the category chart need."""
-    spent = total_spent(session, month)
-    income = total_income(session, month)
+def summary(session: Session, month=None, **source) -> dict:
+    """Everything the summary cards and the category chart need.
+
+    The source filter reaches every number here, not just the table below
+    them. A dashboard where the filter moves the list but leaves the totals
+    describing the whole database is worse than one with no filter at all.
+    """
+    spent = total_spent(session, month, **source)
+    income = total_income(session, month, **source)
 
     return {
         "total_spent": spent,
         "total_income": income,
         "net": income - spent,
-        "transaction_count": transaction_count(session, month),
-        "by_category": totals_by_category(session, month),
-        "top_merchants": top_merchants(session, month),
+        "transaction_count": transaction_count(session, month, **source),
+        "by_category": totals_by_category(session, month, **source),
+        "top_merchants": top_merchants(session, month, **source),
     }
 
 
-def monthly_trends(session: Session):
+def monthly_trends(session: Session, **source):
     """Spend and income per month, oldest first.
 
     Months with no transactions are not invented - the chart shows the
-    months the statements actually cover.
+    months the statements actually cover, and under a source filter that
+    means the months that file covers.
     """
     month_column = func.strftime("%Y-%m", Transaction.date)
 
     rows = session.execute(
         select(month_column, Transaction.direction, func.sum(Transaction.amount))
-        .where(Transaction.category.notin_(NON_SPENDING))
+        .where(
+            Transaction.category.notin_(NON_SPENDING), *source_conditions(**source)
+        )
         .group_by(month_column, Transaction.direction)
     ).all()
 

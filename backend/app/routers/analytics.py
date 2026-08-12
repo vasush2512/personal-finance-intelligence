@@ -26,10 +26,16 @@ def validated_month(month):
 @router.get("/summary", response_model=Summary)
 def get_summary(
     month: str | None = Query(None, description="YYYY-MM; omit for all time"),
+    upload_id: int | None = Query(None, description="restrict to one uploaded file"),
+    sheet: str | None = Query(
+        None, description="worksheet name; empty string means rows with no sheet"
+    ),
     session: Session = Depends(get_session),
 ):
     """Totals, the category split, and the biggest merchants."""
-    return aggregations.summary(session, validated_month(month))
+    return aggregations.summary(
+        session, validated_month(month), upload_id=upload_id, sheet=sheet
+    )
 
 
 @router.get("/sources", response_model=list[UploadSource])
@@ -44,6 +50,16 @@ def get_sources(session: Session = Depends(get_session)):
 
 
 @router.get("/trends", response_model=list[TrendPoint])
-def get_trends(session: Session = Depends(get_session)):
-    """Spend and income per month, oldest first. Always the full history."""
-    return aggregations.monthly_trends(session)
+def get_trends(
+    upload_id: int | None = Query(None, description="restrict to one uploaded file"),
+    sheet: str | None = Query(
+        None, description="worksheet name; empty string means rows with no sheet"
+    ),
+    session: Session = Depends(get_session),
+):
+    """Spend and income per month, oldest first.
+
+    Never narrowed by the month filter — the chart is what you pick a month
+    from, so filtering it by that month would leave a single bar.
+    """
+    return aggregations.monthly_trends(session, upload_id=upload_id, sheet=sheet)
