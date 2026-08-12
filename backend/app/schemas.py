@@ -43,6 +43,57 @@ class TransactionOut(BaseModel):
         return f"{amount:.2f}"
 
 
+class CategoryTotal(BaseModel):
+    category: str
+    total: Decimal
+    count: int
+
+    @field_serializer("total")
+    def serialize_total(self, total: Decimal) -> str:
+        return f"{total:.2f}"
+
+
+class MerchantTotal(BaseModel):
+    merchant: str
+    total: Decimal
+    count: int
+
+    @field_serializer("total")
+    def serialize_total(self, total: Decimal) -> str:
+        return f"{total:.2f}"
+
+
+class Summary(BaseModel):
+    """GET /api/summary. Spending excludes transfers — see aggregations.py."""
+
+    total_spent: Decimal
+    total_income: Decimal
+    net: Decimal
+    transaction_count: int
+    by_category: list[CategoryTotal]
+    top_merchants: list[MerchantTotal]
+
+    @field_serializer("total_spent", "total_income", "net")
+    def serialize_money(self, amount: Decimal) -> str:
+        return f"{amount:.2f}"
+
+
+class TrendPoint(BaseModel):
+    month: str
+    spent: Decimal
+    income: Decimal
+
+    @field_serializer("spent", "income")
+    def serialize_money(self, amount: Decimal) -> str:
+        return f"{amount:.2f}"
+
+
+class UploadDeleted(BaseModel):
+    upload_id: int
+    filename: str
+    transactions_deleted: int
+
+
 class RetrainResult(BaseModel):
     """What POST /api/model/retrain reports back.
 
