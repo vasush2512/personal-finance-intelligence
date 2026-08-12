@@ -1,7 +1,10 @@
 """Database engine, session factory, and the declarative Base."""
 
+import sqlite3
+
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import DATABASE_URL, ensure_data_dir
 
@@ -15,17 +18,22 @@ class Base(DeclarativeBase):
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 
-@event.listens_for(engine, "connect")
+@event.listens_for(Engine, "connect")
 def _enable_foreign_keys(dbapi_connection, _connection_record):
-    """Turn on foreign key enforcement.
+    """Turn on foreign key enforcement for every SQLite connection.
 
-    SQLite ignores foreign keys unless this pragma is set on every connection.
-    Without it the ON DELETE CASCADE on transactions.upload_id would silently
-    do nothing and deleting an upload would leave its rows orphaned.
+    SQLite ignores foreign keys unless this pragma is set, per connection.
+    Without it the ON DELETE CASCADE on transactions.upload_id silently does
+    nothing and deleting an upload leaves its rows orphaned.
+
+    This listens on the Engine *class*, not on our one engine, so that test
+    engines behave identically to the real one. Attaching it to a single
+    engine is what let this bug through the first time.
     """
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
