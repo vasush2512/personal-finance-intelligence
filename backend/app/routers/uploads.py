@@ -11,20 +11,35 @@ from app.services.parser import UnparseableStatement
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 
+# Formats services/readers.py can turn into rows.
+SUPPORTED_EXTENSIONS = (".csv", ".txt", ".tsv", ".json", ".xlsx", ".xlsm")
+
 
 @router.post("/upload", response_model=UploadResult)
 async def upload_statement(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
-    """Parse a CSV and store its new rows.
+    """Parse a statement file and store its new rows.
+
+    CSV, JSON and Excel are all accepted; the format is worked out from the
+    file itself, not trusted from its name.
 
     Re-uploading the same file is safe: every row is recognised by its
     fingerprint and reported as a duplicate instead of being stored twice.
+    That holds across formats too — the same statement as CSV and as JSON
+    fingerprints identically, because the fingerprint is built from the
+    parsed values, not the file's text.
     """
     filename = file.filename or "upload.csv"
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only .csv files are supported.")
+    if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported file type. Upload one of: "
+                f"{', '.join(SUPPORTED_EXTENSIONS)}."
+            ),
+        )
 
     content = await file.read()
     if not content:

@@ -1,18 +1,20 @@
-"""Parse a real-world bank statement CSV into clean transaction dicts.
+"""Parse a real-world bank statement into clean transaction dicts.
 
 Design rule from the PRD: this module NEVER raises on a bad row. Rows that
 cannot be parsed are counted and skipped. Only a file whose header cannot be
 found at all raises, and that error carries the column names we did detect so
 the UI can offer manual mapping.
+
+Reading the file into rows is services/readers.py's job, so this module is
+the same whether the upload was CSV, JSON or Excel.
 """
 
-import csv
-import io
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.services.normalize import fingerprint, normalize_description
+from app.services.readers import UnreadableFile, read_rows
 
 # --- column aliases -------------------------------------------------------
 
@@ -66,6 +68,14 @@ def parse_amount(value):
     """'1,25,000.50' / '₹450' / '(200)' / '-300' -> Decimal, or None."""
     if value is None:
         return None
+
+    # Excel and JSON give real numbers. Route them through str() rather than
+    # Decimal(float), which would faithfully reproduce the float's error.
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        value = repr(value)
+
     text = str(value).strip()
     if not text or text.lower() in {"-", "nan", "none", "null", "nil"}:
         return None
@@ -87,6 +97,15 @@ def parse_date(value):
     """Try every known format. Returns a date, or None."""
     if value is None:
         return None
+
+    # Excel hands back real datetimes rather than text, and so does a JSON
+    # reader that has already been given a date object. Take them as they are
+    # instead of formatting them just to parse them again.
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
     text = str(value).strip()
     if not text:
         return None
@@ -217,29 +236,20 @@ def parse_rows(rows, columns):
     return transactions, skipped
 
 
-def parse_statement(file_bytes):
+def parse_statement(file_bytes, filename=None):
     """Entry point. bytes -> (transactions, skipped_count).
 
-    Raises UnparseableStatement only when no header row can be found.
+    The file may be CSV, JSON or Excel; services/readers.py works out which
+    and hands back rows. Everything from here down is format-blind.
+
+    Raises UnparseableStatement only when the file cannot be read at all or
+    no header row can be found. Bad individual rows are counted, never
+    raised.
     """
-    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            text = file_bytes.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        raise UnparseableStatement("File is not readable as text.")
-
     try:
-        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
-        delimiter = dialect.delimiter
-    except csv.Error:
-        delimiter = ","
-
-    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
-    if not rows:
-        raise UnparseableStatement("File is empty.")
+        rows = read_rows(file_bytes, filename)
+    except UnreadableFile as error:
+        raise UnparseableStatement(str(error), detected_columns=error.detected_columns)
 
     header_index, header_cells = find_header_row(rows)
     columns = map_columns(header_cells)

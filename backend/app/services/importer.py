@@ -90,7 +90,7 @@ def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict
     Raises UnparseableStatement (from parser.py) only when no header row can
     be found. Individual bad rows are counted in `skipped`, never raised.
     """
-    parsed_rows, skipped = parse_statement(file_bytes)
+    parsed_rows, skipped = parse_statement(file_bytes, filename)
 
     known = find_known_fingerprints(session, {row["fingerprint"] for row in parsed_rows})
     new_rows, duplicates = split_new_from_duplicates(parsed_rows, known)

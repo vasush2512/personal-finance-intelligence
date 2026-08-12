@@ -1,9 +1,9 @@
 # Expense Tracker
 
-Upload a bank statement CSV. Every transaction is parsed, deduplicated and
-auto-categorized — first by keyword rules, then by a classifier trained on
-those rules' output — and a dashboard shows where the money went, with
-unusually large spending flagged.
+Upload a bank statement — CSV, JSON or Excel. Every transaction is parsed,
+deduplicated and auto-categorized — first by keyword rules, then by a
+classifier trained on those rules' output — and a dashboard shows where the
+money went, with unusually large spending flagged.
 
 Built for Indian bank statements: UPI/NEFT/IMPS narrations, `₹` amounts with
 lakh grouping (`1,25,000.50`), and separate withdrawal/deposit columns.
@@ -177,6 +177,25 @@ It handles junk blocks above the real header, `,`/`;`/tab/`|` delimiters,
 three encodings, ten date formats, `₹`/`Rs`/comma/parenthesised amounts,
 trailing `CR`/`DR`, separate withdrawal+deposit columns or one signed amount
 column, and roughly 40 column-name variations.
+
+### More than one format
+
+`app/services/readers.py` turns **CSV, JSON or Excel `.xlsx`** into rows of
+cells. Everything after that point is format-blind, so adding a format means
+writing one function and changing nothing else.
+
+Detection reads the file's own bytes before trusting its name — an `.xlsx` is
+a zip archive, and JSON starts with `{` or `[` — because people rename files
+and browsers misreport content types.
+
+JSON can be a list of objects, a list of lists, or an object wrapping the list
+under a key like `transactions` or `data`. Object keys become the header row,
+which is what lets JSON reuse the CSV column aliases for free: `narration`,
+`Narration` and `particulars` all land in the same place.
+
+Since a fingerprint is built from the *parsed values* and not the file's text,
+uploading the same statement as CSV and then as JSON correctly imports zero
+rows the second time.
 
 ## Project layout
 

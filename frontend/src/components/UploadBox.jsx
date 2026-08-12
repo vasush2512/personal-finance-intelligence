@@ -31,12 +31,12 @@ export default function UploadBox({ onUpload, busy, lastResult }) {
         handleFiles(event.dataTransfer.files);
       }}
     >
-      <p>Drop a bank statement CSV here</p>
+      <p>Drop a bank statement here — CSV, JSON or Excel</p>
 
       <input
         ref={fileInput}
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,text/csv,application/json"
         style={{ display: "none" }}
         onChange={(event) => {
           handleFiles(event.target.files);
