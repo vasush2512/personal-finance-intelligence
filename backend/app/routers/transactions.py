@@ -69,6 +69,17 @@ def build_filters(month, category, search, direction):
     return conditions
 
 
+@router.get("/categories", response_model=list[str])
+def list_categories():
+    """The category vocabulary, for the UI's dropdown.
+
+    Not in PRD 8, but the alternative is copying the list into JavaScript,
+    and the house rule is that category names live in constants.py and
+    nowhere else. An endpoint keeps that true across languages.
+    """
+    return list(CATEGORIES)
+
+
 @router.get("/transactions", response_model=TransactionPage)
 def list_transactions(
     month: str | None = Query(None, description="YYYY-MM"),
