@@ -7,8 +7,10 @@ import { useEffect } from "react";
  * with a date and a description column. Columns found: random, junk" tells
  * the user what to fix; "Upload failed" does not.
  *
- * Success messages clear themselves. Errors stay until dismissed, because an
- * error you looked away from is one you never read.
+ * Success messages clear themselves. Errors and explanations stay until
+ * dismissed, because a message you looked away from is one you never read —
+ * and "nothing happened, here is why" is exactly the message a user needs to
+ * finish reading.
  */
 const SUCCESS_TIMEOUT_MS = 4000;
 

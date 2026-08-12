@@ -43,6 +43,10 @@ export default function App() {
     setToast({ kind: "success", message });
   }
 
+  function showInfo(message) {
+    setToast({ kind: "info", message });
+  }
+
   /**
    * The category list carries per-category counts, which change whenever a
    * row is imported or re-categorized, so it reloads with the dashboard
@@ -150,6 +154,14 @@ export default function App() {
 
       if (totals.imported > 0) {
         showSuccess(`Imported ${totals.imported} transactions.`);
+      } else if (totals.files > 0 && totals.duplicates > 0) {
+        // The commonest confusion in this app: a correct no-op looks broken.
+        // Say plainly that the upload worked and why nothing moved.
+        showInfo(
+          `Already imported. All ${totals.duplicates} rows were recognised as ` +
+            `duplicates, so nothing changed. Upload a statement for a different ` +
+            `period to add to your data.`
+        );
       }
       if (totals.failures.length > 0) {
         showError(

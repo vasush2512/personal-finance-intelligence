@@ -357,6 +357,11 @@ td select {
   background: #14532d;
 }
 
+/* Neither failure nor success: "this worked, and here is why nothing moved." */
+.toast.info {
+  background: #1c3d5a;
+}
+
 .toast button {
   background: transparent;
   border: none;

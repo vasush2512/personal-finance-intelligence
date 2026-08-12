@@ -85,13 +85,19 @@ function UploadSummary({ result }) {
   const { imported, duplicates, skipped, files, failures } = result;
   const fileWord = files === 1 ? "file" : "files";
 
+  const nothingNew = imported === 0 && duplicates > 0;
+
   return (
     <div className="chart-note">
       <p style={{ margin: 0 }}>
         {imported > 0
           ? `Imported ${imported} transactions from ${files} ${fileWord}.`
-          : `Nothing new in ${files} ${fileWord} — every row was already imported.`}
-        {duplicates > 0 && ` ${duplicates} duplicates skipped.`}
+          : nothingNew
+            ? `Upload succeeded, but nothing changed — all ${duplicates} rows in ` +
+              `${files === 1 ? "this file" : `these ${files} files`} were already ` +
+              `in your data.`
+            : `No transactions found in ${files} ${fileWord}.`}
+        {imported > 0 && duplicates > 0 && ` ${duplicates} duplicates skipped.`}
         {skipped > 0 && ` ${skipped} unreadable rows skipped.`}
       </p>
 
