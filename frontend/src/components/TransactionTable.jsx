@@ -47,6 +47,7 @@ export default function TransactionTable({
                 </td>
                 <td>
                   <select
+                    aria-label={`Category for ${transaction.description}`}
                     value={transaction.category}
                     disabled={savingId === transaction.id}
                     onChange={(event) =>

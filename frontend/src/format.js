@@ -7,11 +7,19 @@
  * nothing is ever shown that floating point has rounded.
  */
 
-/** "9400.00" -> "₹9,400" with Indian digit grouping. */
+/**
+ * "9400.00" -> "₹9,400" with Indian digit grouping.
+ *
+ * The sign goes before the symbol: "-₹1,41,066", not "₹-1,41,066".
+ */
 export function formatMoney(amount) {
   const number = Number(amount);
   if (Number.isNaN(number)) return "₹0";
-  return `₹${number.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  const sign = number < 0 ? "-" : "";
+  const grouped = Math.abs(number).toLocaleString("en-IN", {
+    maximumFractionDigits: 0,
+  });
+  return `${sign}₹${grouped}`;
 }
 
 /** "9400.00" -> "₹9,400.00", for the table where exactness matters. */

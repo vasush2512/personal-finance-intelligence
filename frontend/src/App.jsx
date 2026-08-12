@@ -12,6 +12,7 @@ import UploadBox from "./components/UploadBox.jsx";
 import { formatMonth } from "./format.js";
 
 const EMPTY_FILTERS = { month: "", category: "", search: "" };
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function App() {
   const [categories, setCategories] = useState([]);
@@ -20,6 +21,8 @@ export default function App() {
   const [page, setPage] = useState({ items: [], total: 0 });
 
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  // What is in the search box, which is not yet what has been searched for.
+  const [searchInput, setSearchInput] = useState("");
   const [offset, setOffset] = useState(0);
 
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,21 @@ export default function App() {
     loadDashboard();
   }, [loadDashboard]);
 
+  /**
+   * Wait until typing pauses before searching.
+   *
+   * Without this, "swiggy" fires six requests and the table flashes six
+   * times. The timer resets on every keystroke, so only the pause triggers.
+   */
+  useEffect(() => {
+    if (searchInput === filters.search) return undefined;
+    const timer = setTimeout(() => {
+      setFilters((current) => ({ ...current, search: searchInput }));
+      setOffset(0);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput, filters.search]);
+
   async function handleUpload(file) {
     setUploading(true);
     try {
@@ -91,14 +109,21 @@ export default function App() {
     setSavingId(id);
     try {
       const updated = await api.updateCategory(id, category);
-      // Patch the row in place so the table does not jump while you work,
-      // then refresh the totals, which have changed underneath it.
-      setPage((current) => ({
-        ...current,
-        items: current.items.map((row) => (row.id === id ? updated : row)),
-      }));
-      const summaryData = await api.getSummary(filters.month);
-      setSummary(summaryData);
+
+      if (filters.category) {
+        // A category filter is on, so the row you just re-labelled probably
+        // no longer belongs in this list. Reload rather than leave it there
+        // contradicting the filter above it.
+        await loadDashboard();
+      } else {
+        // Patch in place so the table does not jump while you work, then
+        // refresh the totals, which have changed underneath it.
+        setPage((current) => ({
+          ...current,
+          items: current.items.map((row) => (row.id === id ? updated : row)),
+        }));
+        setSummary(await api.getSummary(filters.month));
+      }
     } catch (error) {
       showError(error);
     } finally {
@@ -108,6 +133,7 @@ export default function App() {
 
   function changeFilters(next) {
     setFilters(next);
+    setSearchInput(next.search || "");
     setOffset(0);
   }
 
@@ -174,14 +200,17 @@ export default function App() {
                 filters={filters}
                 months={months}
                 categories={categories}
+                searchValue={searchInput}
+                onSearchChange={setSearchInput}
                 onChange={changeFilters}
                 onReset={() => changeFilters(EMPTY_FILTERS)}
               />
             </div>
 
-            {loading ? (
-              <p className="loading">Loading transactions…</p>
-            ) : (
+            {/* The table stays mounted while refetching. Swapping it for a
+                spinner on every filter change makes the page flash and loses
+                your scroll position. */}
+            <div style={{ opacity: loading ? 0.55 : 1, transition: "opacity .15s" }}>
               <TransactionTable
                 page={page}
                 categories={categories}
@@ -190,7 +219,7 @@ export default function App() {
                 offset={offset}
                 onOffsetChange={setOffset}
               />
-            )}
+            </div>
           </>
         )}
       </div>

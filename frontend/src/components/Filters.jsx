@@ -3,12 +3,20 @@ import { formatCategory, formatMonth } from "../format.js";
 /**
  * One row of filters above the table: month, category, and a text search.
  */
-export default function Filters({ filters, months, categories, onChange, onReset }) {
+export default function Filters({
+  filters,
+  months,
+  categories,
+  searchValue,
+  onSearchChange,
+  onChange,
+  onReset,
+}) {
   function update(key, value) {
     onChange({ ...filters, [key]: value });
   }
 
-  const isFiltered = filters.month || filters.category || filters.search;
+  const isFiltered = filters.month || filters.category || searchValue;
 
   return (
     <div className="filters">
@@ -46,12 +54,13 @@ export default function Filters({ filters, months, categories, onChange, onReset
 
       <div className="field">
         <label htmlFor="search">Search</label>
+        {/* Typing here does not refetch on every keystroke — App debounces it. */}
         <input
           id="search"
           type="search"
           placeholder="swiggy, rent, amazon…"
-          value={filters.search || ""}
-          onChange={(event) => update("search", event.target.value)}
+          value={searchValue}
+          onChange={(event) => onSearchChange(event.target.value)}
         />
       </div>
 

@@ -69,7 +69,12 @@ export default function CategoryChart({ categories, onSelect, selected }) {
             dataKey="total"
             radius={[0, 4, 4, 0]}
             barSize={16}
-            onClick={(entry) => onSelect(entry.category)}
+            // Recharts hands the click either the row itself or a wrapper
+            // with the row on .payload, depending on where you hit the bar.
+            onClick={(entry) => {
+              const category = entry?.category ?? entry?.payload?.category;
+              if (category) onSelect(category);
+            }}
             cursor="pointer"
             // Direct value labels: the relief rule for a chart whose fill
             // sits below 3:1 against the surface.

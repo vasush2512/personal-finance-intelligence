@@ -38,12 +38,14 @@ export default function TrendChart({ trends }) {
             tick={{ fill: CHROME.muted, fontSize: 12 }}
             axisLine={{ stroke: CHROME.axis }}
             tickLine={false}
+            // Drop labels rather than let "Sep 2025" collide on a narrow window.
+            minTickGap={12}
           />
           <YAxis
             tick={{ fill: CHROME.muted, fontSize: 12 }}
             axisLine={false}
             tickLine={false}
-            width={64}
+            width={76}
             tickFormatter={(value) => formatMoney(value)}
           />
           <Tooltip
