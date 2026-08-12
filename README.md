@@ -156,7 +156,8 @@ code only ever sees `Decimal`.
 | `POST` | `/api/upload` | import a CSV; returns imported/skipped/duplicate counts |
 | `GET` | `/api/transactions` | list, filtered by month/category/search/direction |
 | `PATCH` | `/api/transactions/{id}` | correct a category; marks it `user` |
-| `GET` | `/api/categories` | the category vocabulary |
+| `GET` | `/api/categories` | the category vocabulary, with row counts |
+| `GET` | `/api/sources` | files and worksheets rows came from |
 | `POST` | `/api/model/retrain` | refit the classifier; returns accuracy |
 | `GET` | `/api/summary` | totals, category split, top merchants |
 | `GET` | `/api/trends` | spend and income per month |
@@ -196,6 +197,28 @@ which is what lets JSON reuse the CSV column aliases for free: `narration`,
 Since a fingerprint is built from the *parsed values* and not the file's text,
 uploading the same statement as CSV and then as JSON correctly imports zero
 rows the second time.
+
+**Every worksheet in a workbook is read**, not just the first — exporters
+routinely put one month per tab. Sheets that are not transaction tables (a
+cover page, a summary tab) have no header row and are passed over rather than
+failing the upload; a workbook where *no* sheet is a table still fails, so
+this cannot turn a wrong file into a silent no-op.
+
+Several files can be uploaded at once. They import sequentially, not in
+parallel: concurrent imports race on the fingerprint table, and two files
+sharing a transaction could both conclude theirs is new.
+
+## Filters come from the data
+
+Nothing in the filter row is hardcoded. Months come from the range the
+statements cover, categories from the categories that actually have rows
+(shown with counts), and **source** from the files and worksheets that were
+imported — so a workbook with a tab per month can be filtered tab by tab, and
+`sheet=` on its own selects the rows that came from single-table files.
+
+An option is never offered if picking it would return nothing. The one
+exception is the table's inline category dropdown, which lists all twelve:
+you have to be able to move a transaction into a category nothing uses yet.
 
 ## Project layout
 

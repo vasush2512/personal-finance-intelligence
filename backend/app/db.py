@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -52,3 +52,35 @@ def create_all() -> None:
     """Create data/ and any missing tables. Called on startup."""
     ensure_data_dir()
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
+
+
+def add_missing_columns() -> None:
+    """Add columns the models have gained since the database was created.
+
+    create_all() only creates whole tables; it will not touch one that
+    already exists, so a new column would silently never appear and every
+    query naming it would fail.
+
+    This is deliberately the smallest thing that works, not a migration
+    framework: it only ever ADDs a nullable column, which SQLite does
+    in place without rewriting the table. It cannot drop, rename or retype
+    anything, so it cannot lose data. Anything beyond that needs a real
+    migration tool and a conversation.
+    """
+    inspector = inspect(engine)
+
+    for table in Base.metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+
+        existing = {column["name"] for column in inspector.get_columns(table.name)}
+
+        for column in table.columns:
+            if column.name in existing or not column.nullable:
+                continue
+            column_type = column.type.compile(dialect=engine.dialect)
+            with engine.begin() as connection:
+                connection.execute(
+                    text(f'ALTER TABLE {table.name} ADD COLUMN "{column.name}" {column_type}')
+                )

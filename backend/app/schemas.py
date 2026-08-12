@@ -104,6 +104,34 @@ class TrendPoint(BaseModel):
         return f"{amount:.2f}"
 
 
+class CategoryOption(BaseModel):
+    """A category and how many transactions currently carry it."""
+
+    category: str
+    count: int
+
+
+class SheetSource(BaseModel):
+    """One worksheet within an uploaded file."""
+
+    sheet_name: str | None
+    count: int
+
+
+class UploadSource(BaseModel):
+    """One uploaded file and the sheets it contributed.
+
+    This is what the source filter is built from, so the options always match
+    what is actually in the database rather than a hardcoded list.
+    """
+
+    upload_id: int
+    filename: str
+    uploaded_at: dt.datetime
+    count: int
+    sheets: list[SheetSource]
+
+
 class UploadDeleted(BaseModel):
     upload_id: int
     filename: str

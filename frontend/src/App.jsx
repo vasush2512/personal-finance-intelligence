@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as api from "./api.js";
 import AnomaliesPanel from "./components/AnomaliesPanel.jsx";
 import CategoryChart from "./components/CategoryChart.jsx";
-import Filters from "./components/Filters.jsx";
+import Filters, { decodeSource } from "./components/Filters.jsx";
 import SummaryCards from "./components/SummaryCards.jsx";
 import Toast from "./components/Toast.jsx";
 import TopMerchants from "./components/TopMerchants.jsx";
@@ -12,7 +12,7 @@ import TrendChart from "./components/TrendChart.jsx";
 import UploadBox from "./components/UploadBox.jsx";
 import { formatMonth } from "./format.js";
 
-const EMPTY_FILTERS = { month: "", category: "", search: "" };
+const EMPTY_FILTERS = { month: "", category: "", search: "", source: "" };
 const SEARCH_DEBOUNCE_MS = 300;
 
 export default function App() {
@@ -20,6 +20,7 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
+  const [sources, setSources] = useState([]);
   const [page, setPage] = useState({ items: [], total: 0 });
 
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -42,10 +43,11 @@ export default function App() {
     setToast({ kind: "success", message });
   }
 
-  /** The category vocabulary is fetched once; it never changes at runtime. */
-  useEffect(() => {
-    api.getCategories().then(setCategories).catch(showError);
-  }, []);
+  /**
+   * The category list carries per-category counts, which change whenever a
+   * row is imported or re-categorized, so it reloads with the dashboard
+   * rather than once at startup.
+   */
 
   /**
    * Everything the dashboard shows, reloaded together.
@@ -57,15 +59,30 @@ export default function App() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryData, trendData, anomalyData, pageData] = await Promise.all([
-        api.getSummary(filters.month),
-        api.getTrends(),
-        api.getAnomalies(),
-        api.getTransactions({ ...filters, limit: PAGE_SIZE, offset }),
-      ]);
+      // The source filter travels as upload_id + sheet, not as the single
+      // value the dropdown uses, so unpack it before it reaches the API.
+      const { source, ...rest } = filters;
+      const transactionQuery = {
+        ...rest,
+        ...decodeSource(source),
+        limit: PAGE_SIZE,
+        offset,
+      };
+
+      const [summaryData, trendData, anomalyData, sourceData, categoryData, pageData] =
+        await Promise.all([
+          api.getSummary(filters.month),
+          api.getTrends(),
+          api.getAnomalies(),
+          api.getSources(),
+          api.getCategories(),
+          api.getTransactions(transactionQuery),
+        ]);
       setSummary(summaryData);
       setTrends(trendData);
       setAnomalies(anomalyData);
+      setSources(sourceData);
+      setCategories(categoryData);
       setPage(pageData);
     } catch (error) {
       showError(error);
@@ -248,7 +265,10 @@ export default function App() {
               <Filters
                 filters={filters}
                 months={months}
-                categories={categories}
+                // Only categories that have rows. Offering an option that
+                // can only ever return "no transactions match" is noise.
+                categories={categories.filter((entry) => entry.count > 0)}
+                sources={sources}
                 searchValue={searchInput}
                 onSearchChange={setSearchInput}
                 onChange={changeFilters}

@@ -81,6 +81,11 @@ export function getAnomalies() {
   return request("/api/anomalies");
 }
 
+/** The files and worksheets rows actually came from. */
+export function getSources() {
+  return request("/api/sources");
+}
+
 export function updateCategory(id, category) {
   return request(`/api/transactions/${id}`, {
     method: "PATCH",

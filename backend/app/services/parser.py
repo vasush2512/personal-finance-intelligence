@@ -259,12 +259,15 @@ def parse_statement(file_bytes, filename=None):
     transactions, skipped = [], 0
     first_failure = None
 
-    for _name, rows in sheets:
+    for name, rows in sheets:
         try:
             sheet_transactions, sheet_skipped = parse_sheet(rows)
         except UnparseableStatement as error:
             first_failure = first_failure or error
             continue
+        # Remember which tab each row came from, so the UI can filter by it.
+        for transaction in sheet_transactions:
+            transaction["sheet_name"] = name
         transactions.extend(sheet_transactions)
         skipped += sheet_skipped
 

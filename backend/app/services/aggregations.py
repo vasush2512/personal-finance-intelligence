@@ -18,7 +18,8 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Transaction
+from app.constants import CATEGORIES
+from app.models import Transaction, Upload
 
 # Categories that are movements, not spending.
 NON_SPENDING = ("transfer",)
@@ -144,6 +145,68 @@ def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT):
         {"merchant": name or "unknown", "total": total, "count": count}
         for name, total, count in rows
     ]
+
+
+def category_counts(session: Session):
+    """Every category in the vocabulary, with how many rows carry it.
+
+    All twelve are returned, including the empty ones, because two callers
+    need different halves: the filter shows only categories that have rows,
+    while the table's dropdown has to offer every category — you cannot move
+    a transaction into a category that no row uses yet if it is not listed.
+
+    Unlike the spending breakdown this counts transfers and income too. They
+    are excluded from totals, not from existence.
+    """
+    counted = dict(
+        session.execute(
+            select(Transaction.category, func.count(Transaction.id))
+            .group_by(Transaction.category)
+        ).all()
+    )
+
+    return [
+        {"category": category, "count": counted.get(category, 0)}
+        for category in CATEGORIES
+    ]
+
+
+def sources(session: Session):
+    """Every upload that still has rows, with its sheets and their counts.
+
+    Uploads that imported nothing are left out: a re-upload of a statement
+    you already had is a real event, but it is not a place transactions can
+    be filtered to, and listing it would give the filter dead options.
+    """
+    rows = session.execute(
+        select(
+            Upload.id,
+            Upload.filename,
+            Upload.uploaded_at,
+            Transaction.sheet_name,
+            func.count(Transaction.id),
+        )
+        .join(Transaction, Transaction.upload_id == Upload.id)
+        .group_by(Upload.id, Transaction.sheet_name)
+        .order_by(Upload.uploaded_at.desc(), Transaction.sheet_name)
+    ).all()
+
+    uploads = {}
+    for upload_id, filename, uploaded_at, sheet_name, count in rows:
+        entry = uploads.setdefault(
+            upload_id,
+            {
+                "upload_id": upload_id,
+                "filename": filename,
+                "uploaded_at": uploaded_at,
+                "count": 0,
+                "sheets": [],
+            },
+        )
+        entry["count"] += count
+        entry["sheets"].append({"sheet_name": sheet_name, "count": count})
+
+    return list(uploads.values())
 
 
 def summary(session: Session, month=None) -> dict:

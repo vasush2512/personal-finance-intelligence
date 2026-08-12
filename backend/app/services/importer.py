@@ -111,6 +111,7 @@ def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict
         session.add(
             Transaction(
                 upload_id=upload.id,
+                sheet_name=row.get("sheet_name"),
                 date=_as_date(row["date"]),
                 description=row["description"],
                 normalized_description=row["normalized_description"],

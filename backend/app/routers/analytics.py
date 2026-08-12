@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.schemas import Summary, TrendPoint
+from app.schemas import Summary, TrendPoint, UploadSource
 from app.services import aggregations
 
 router = APIRouter(prefix="/api", tags=["analytics"])
@@ -30,6 +30,17 @@ def get_summary(
 ):
     """Totals, the category split, and the biggest merchants."""
     return aggregations.summary(session, validated_month(month))
+
+
+@router.get("/sources", response_model=list[UploadSource])
+def get_sources(session: Session = Depends(get_session)):
+    """The files and worksheets that transactions actually came from.
+
+    The source filter is built from this, so its options are whatever is in
+    the database — a workbook's tabs appear as tabs, and nothing is listed
+    that has no rows behind it.
+    """
+    return aggregations.sources(session)
 
 
 @router.get("/trends", response_model=list[TrendPoint])

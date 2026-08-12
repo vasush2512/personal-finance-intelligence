@@ -54,9 +54,12 @@ export default function TransactionTable({
                       onChangeCategory(transaction.id, event.target.value)
                     }
                   >
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
+                    {/* Every category, including ones nothing uses yet —
+                        otherwise a row could never be moved into an empty
+                        one. */}
+                    {categories.map((entry) => (
+                      <option key={entry.category} value={entry.category}>
+                        {entry.category}
                       </option>
                     ))}
                   </select>

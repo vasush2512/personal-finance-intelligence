@@ -96,6 +96,10 @@ class Transaction(Base):
         ForeignKey("uploads.id", ondelete="CASCADE"), index=True
     )
 
+    # Which worksheet this row came from, for workbooks with a tab per month.
+    # Null for CSV and JSON, which hold a single table.
+    sheet_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
     date: Mapped[dt.date] = mapped_column(Date, index=True)
     description: Mapped[str] = mapped_column(String)
     normalized_description: Mapped[str] = mapped_column(String, default="")

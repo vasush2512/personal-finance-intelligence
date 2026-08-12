@@ -244,7 +244,10 @@ def read_sheets(file_bytes: bytes, filename=None):
     if kind == "excel":
         sheets = read_excel_sheets(file_bytes)
     else:
-        sheets = [(filename or "file", READERS[kind](file_bytes))]
+        # One table, so there is no sheet to name. None rather than the
+        # filename: the upload already records that, and repeating it would
+        # show every CSV row as "statement.csv > statement.csv".
+        sheets = [(None, READERS[kind](file_bytes))]
 
     sheets = [(name, rows) for name, rows in sheets if rows]
     if not sheets:

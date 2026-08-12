@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from app.constants import CATEGORIES
 from app.db import get_session
 from app.models import Transaction
-from app.schemas import TransactionOut, TransactionPage, TransactionUpdate
+from app.schemas import (
+    CategoryOption,
+    TransactionOut,
+    TransactionPage,
+    TransactionUpdate,
+)
+from app.services import aggregations
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -38,9 +44,21 @@ def month_bounds(month: str):
     return start, end
 
 
-def build_filters(month, category, search, direction):
+def build_filters(month, category, search, direction, upload_id=None, sheet=None):
     """Translate the query string into a list of SQLAlchemy conditions."""
     conditions = []
+
+    if upload_id is not None:
+        conditions.append(Transaction.upload_id == upload_id)
+
+    if sheet is not None:
+        # An explicit empty string means "the rows with no sheet", which is
+        # every CSV and JSON row. Without this you could filter to a
+        # workbook's tabs but never to a plain file's rows.
+        if sheet == "":
+            conditions.append(Transaction.sheet_name.is_(None))
+        else:
+            conditions.append(Transaction.sheet_name == sheet)
 
     if month:
         start, end = month_bounds(month)
@@ -69,15 +87,19 @@ def build_filters(month, category, search, direction):
     return conditions
 
 
-@router.get("/categories", response_model=list[str])
-def list_categories():
-    """The category vocabulary, for the UI's dropdown.
+@router.get("/categories", response_model=list[CategoryOption])
+def list_categories(session: Session = Depends(get_session)):
+    """The category vocabulary with row counts.
 
     Not in PRD 8, but the alternative is copying the list into JavaScript,
     and the house rule is that category names live in constants.py and
     nowhere else. An endpoint keeps that true across languages.
+
+    All twelve come back, empty ones included. The filter shows only those
+    with rows; the table's dropdown needs the whole list so a transaction can
+    be moved into a category nothing uses yet.
     """
-    return list(CATEGORIES)
+    return aggregations.category_counts(session)
 
 
 @router.get("/transactions", response_model=TransactionPage)
@@ -86,12 +108,16 @@ def list_transactions(
     category: str | None = Query(None),
     search: str | None = Query(None, description="substring of the description"),
     direction: str | None = Query(None, description="debit or credit"),
+    upload_id: int | None = Query(None, description="restrict to one uploaded file"),
+    sheet: str | None = Query(
+        None, description="worksheet name; empty string means rows with no sheet"
+    ),
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
 ):
     """Newest first. `total` counts every match, not just this page."""
-    conditions = build_filters(month, category, search, direction)
+    conditions = build_filters(month, category, search, direction, upload_id, sheet)
 
     total = session.execute(
         select(func.count(Transaction.id)).where(*conditions)
