@@ -1,0 +1,22 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated data — regenerate with scripts/make_sample.py or by uploading a CSV
+backend/data/expenses.db
+backend/data/model.joblib
+
+# Never commit a real bank statement
+backend/data/real_*.csv
+
+# Frontend
+node_modules/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
