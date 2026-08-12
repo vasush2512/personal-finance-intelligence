@@ -43,6 +43,21 @@ class TransactionOut(BaseModel):
         return f"{amount:.2f}"
 
 
+class RetrainResult(BaseModel):
+    """What POST /api/model/retrain reports back.
+
+    holdout_accuracy is agreement with the keyword rules, not correctness —
+    the rules produced the training labels. It only becomes a measure of
+    correctness once enough user corrections are in the training set.
+    """
+
+    trained: bool
+    labelled_rows: int
+    classes: list[str]
+    holdout_accuracy: float
+    model_path: str
+
+
 class TransactionUpdate(BaseModel):
     """Body of PATCH /api/transactions/{id}.
 

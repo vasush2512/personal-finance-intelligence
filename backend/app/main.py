@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import create_all
-from app.routers import transactions, uploads
+from app.routers import model, transactions, uploads
 
 # Imported for the side effect of registering the models on Base.metadata,
 # so create_all() actually sees them.
@@ -31,6 +31,7 @@ app = FastAPI(
 
 app.include_router(uploads.router)
 app.include_router(transactions.router)
+app.include_router(model.router)
 
 
 @app.get("/health")

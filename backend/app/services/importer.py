@@ -4,15 +4,17 @@ The parsing itself lives in parser.py. This module owns the database side:
 dropping rows we have already seen, writing the Upload record, and reporting
 the counts back.
 
-Rows are categorized on the way in, by the keyword rules in app/ml. The
-route handler never touches that code — it calls import_statement and the
-categorization happens here.
+Rows are categorized on the way in: keyword rules first, then the trained
+model for whatever the rules could not place. The route handler never
+touches that code — it calls import_statement and this module orchestrates.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import MODEL_PATH
 from app.ml.categorizer import apply_rules
+from app.ml.trainer import categorize_unmatched, load_model
 from app.models import Transaction, Upload
 from app.services.parser import parse_statement
 
@@ -57,6 +59,31 @@ def split_new_from_duplicates(parsed_rows, known_fingerprints):
     return new_rows, duplicates
 
 
+def categorize(rows, model_path=None):
+    """Label rows in place: rules first, then the model for the leftovers.
+
+    Order is the whole point. The rules are exact and cheap, so they go
+    first and their output is what the model was trained on. The model only
+    ever sees what the rules could not place, and abstains (leaving 'other')
+    when it is less than 0.55 sure.
+
+    A missing model file is normal before the first retrain — the rules
+    still ran, so the import is fine and this simply does nothing extra.
+
+    Rows the user has already corrected are held back from both stages.
+    apply_rules() relabels whatever it is handed, so filtering here is what
+    keeps a human's decision permanent.
+    """
+    automatic = [row for row in rows if row.get("category_source") != "user"]
+
+    apply_rules(automatic)
+
+    model = load_model(str(model_path or MODEL_PATH))
+    if model is None:
+        return 0
+    return categorize_unmatched(automatic, model)
+
+
 def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict:
     """Parse, deduplicate, store. Returns the counts for the API response.
 
@@ -68,9 +95,7 @@ def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict
     known = find_known_fingerprints(session, {row["fingerprint"] for row in parsed_rows})
     new_rows, duplicates = split_new_from_duplicates(parsed_rows, known)
 
-    # Stage 1 of categorization. Sets category / category_source / confidence
-    # on each dict in place; anything no rule matches stays 'other'.
-    apply_rules(new_rows)
+    categorize(new_rows)
 
     upload = Upload(
         filename=filename,
