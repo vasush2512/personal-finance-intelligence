@@ -176,6 +176,27 @@ def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT, **sour
     ]
 
 
+def counts_by_category_source(session: Session, month=None, **source):
+    """How many rows each labeller is responsible for.
+
+    'rule' / 'model' / 'user' is the story of how the categorization is
+    doing: rules cover the obvious merchants, the model reaches the ones no
+    rule names, and a growing 'user' count is the training data that makes
+    the accuracy figure mean something.
+    """
+    rows = session.execute(
+        select(Transaction.category_source, func.count(Transaction.id))
+        .where(*(month_conditions(month) + source_conditions(**source)))
+        .group_by(Transaction.category_source)
+    ).all()
+
+    counted = dict(rows)
+    return [
+        {"source": label, "count": counted.get(label, 0)}
+        for label in ("rule", "model", "user")
+    ]
+
+
 def category_counts(session: Session):
     """Every category in the vocabulary, with how many rows carry it.
 
@@ -254,6 +275,7 @@ def summary(session: Session, month=None, **source) -> dict:
         "net": income - spent,
         "transaction_count": transaction_count(session, month, **source),
         "by_category": totals_by_category(session, month, **source),
+        "by_category_source": counts_by_category_source(session, month, **source),
         "top_merchants": top_merchants(session, month, **source),
     }
 

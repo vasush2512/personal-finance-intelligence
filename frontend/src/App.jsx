@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 
 import * as api from "./api.js";
-import AnomaliesPanel from "./components/AnomaliesPanel.jsx";
-import CategoryChart from "./components/CategoryChart.jsx";
-import Filters, { decodeSource, encodeSource } from "./components/Filters.jsx";
-import SummaryCards from "./components/SummaryCards.jsx";
+import NavBar from "./components/NavBar.jsx";
 import Toast from "./components/Toast.jsx";
-import TopMerchants from "./components/TopMerchants.jsx";
-import TransactionTable, { PAGE_SIZE } from "./components/TransactionTable.jsx";
-import TrendChart from "./components/TrendChart.jsx";
-import UploadBox from "./components/UploadBox.jsx";
+import { decodeSource, encodeSource } from "./components/Filters.jsx";
+import { PAGE_SIZE } from "./components/TransactionTable.jsx";
 import { formatMonth } from "./format.js";
+import FilesPage from "./pages/FilesPage.jsx";
+import ModelPage from "./pages/ModelPage.jsx";
+import OverviewPage from "./pages/OverviewPage.jsx";
+import TransactionsPage from "./pages/TransactionsPage.jsx";
+import UnusualPage from "./pages/UnusualPage.jsx";
+import { navigate, useRoute } from "./router.js";
 
 const EMPTY_FILTERS = { month: "", category: "", search: "", source: "" };
 const SEARCH_DEBOUNCE_MS = 300;
 
+/**
+ * The shell. It owns the data and the filters; the pages only render.
+ *
+ * One place fetches, so the filters cannot mean different things on
+ * different pages — pick a category on Overview and the Transactions page is
+ * already narrowed to it when you arrive.
+ */
 export default function App() {
+  const route = useRoute();
+
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState([]);
@@ -48,16 +58,10 @@ export default function App() {
   }
 
   /**
-   * The category list carries per-category counts, which change whenever a
-   * row is imported or re-categorized, so it reloads with the dashboard
-   * rather than once at startup.
-   */
-
-  /**
    * Everything the dashboard shows, reloaded together.
    *
-   * The three requests go out in parallel: they do not depend on each other,
-   * and running them in sequence would make the page feel three times slower
+   * The requests go out in parallel: they do not depend on each other, and
+   * running them in sequence would make the page feel several times slower
    * than it is.
    */
   const loadDashboard = useCallback(async () => {
@@ -87,6 +91,7 @@ export default function App() {
           api.getCategories(),
           api.getTransactions(transactionQuery),
         ]);
+
       setSummary(summaryData);
       setTrends(trendData);
       setAnomalies(anomalyData);
@@ -159,16 +164,17 @@ export default function App() {
       setOffset(0);
 
       // Show what was just added rather than leaving it buried in the whole
-      // database. With 100,000 rows already stored, 29 new ones move nothing
-      // visible, and the upload reads as having failed.
+      // database. Importing 29 rows into 100,000 moves nothing visible, and
+      // the upload reads as having failed.
       //
       // Only when a single file actually contributed rows: scoping to one of
-      // several files would hide the others, and an upload that imported
-      // nothing has no rows to scope to.
+      // several would hide the others, and an upload that imported nothing
+      // has no rows to scope to.
       const imported = results.filter((result) => result && result.imported > 0);
       if (imported.length === 1) {
         setFilters({ ...EMPTY_FILTERS, source: encodeSource(imported[0].upload_id) });
         setSearchInput("");
+        navigate("/");
       } else {
         await loadDashboard();
       }
@@ -214,12 +220,32 @@ export default function App() {
           ...current,
           items: current.items.map((row) => (row.id === id ? updated : row)),
         }));
-        setSummary(await api.getSummary(filters.month));
+        const { source, ...rest } = filters;
+        setSummary(
+          await api.getSummary({ month: rest.month, ...decodeSource(source) })
+        );
       }
     } catch (error) {
       showError(error);
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function handleDeleteUpload(uploadId, filename) {
+    try {
+      const result = await api.deleteUpload(uploadId);
+      // The filter may have been pointing at what was just deleted.
+      setFilters(EMPTY_FILTERS);
+      setSearchInput("");
+      setOffset(0);
+      showSuccess(
+        `Deleted ${filename} and its ${result.transactions_deleted.toLocaleString(
+          "en-IN"
+        )} transactions.`
+      );
+    } catch (error) {
+      showError(error);
     }
   }
 
@@ -242,6 +268,11 @@ export default function App() {
   const hasData = summary && summary.transaction_count > 0;
   const isFirstLoad = loading && !summary;
 
+  const navCounts = {
+    "/unusual": anomalies.length,
+    "/files": sources.length,
+  };
+
   return (
     <div className="app">
       <header className="masthead">
@@ -251,36 +282,19 @@ export default function App() {
         </div>
         {hasData && (
           <p>
-            {page.total} transactions
+            {summary.transaction_count.toLocaleString("en-IN")} transactions
             {filters.month ? ` in ${formatMonth(filters.month)}` : " tracked"}
           </p>
         )}
       </header>
 
-      <div className="stack">
-        <UploadBox
-          onUpload={handleUpload}
-          busy={uploading}
-          progress={uploadProgress}
-          lastResult={lastUpload}
-        />
+      <NavBar route={route} counts={navCounts} />
 
+      <div className="stack">
         {isFirstLoad && <p className="loading">Loading…</p>}
 
-        {!isFirstLoad && !hasData && (
-          <div className="card empty">
-            <h2>No transactions yet</h2>
-            <p>
-              Upload a statement CSV above to get started. There is a sample at
-              <br />
-              <code>backend/data/sample_statement.csv</code>
-            </p>
-          </div>
-        )}
-
         {/* The page is scoped to one file or tab. Say so where the numbers
-            are, not only in the filter row further down — otherwise the
-            totals look like the totals for everything. */}
+            are — otherwise scoped totals look like totals for everything. */}
         {scope && (
           <div className="card scope-banner">
             <span>
@@ -293,60 +307,65 @@ export default function App() {
           </div>
         )}
 
-        {hasData && (
-          <>
-            <SummaryCards
-              summary={summary}
-              scopeLabel={filters.month ? formatMonth(filters.month) : "All time"}
-            />
+        {!isFirstLoad && !hasData && route !== "/files" && (
+          <div className="card empty">
+            <h2>No transactions yet</h2>
+            <p>
+              Go to <a href="#/files">Files</a> and upload a statement. There is
+              a sample at <code>backend/data/sample_statement.csv</code>.
+            </p>
+          </div>
+        )}
 
-            <TrendChart trends={trends} />
+        {route === "/files" && (
+          <FilesPage
+            sources={sources}
+            onUpload={handleUpload}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            lastUpload={lastUpload}
+            onDelete={handleDeleteUpload}
+            filters={filters}
+            onFilterChange={changeFilters}
+          />
+        )}
 
-            <AnomaliesPanel anomalies={anomalies} />
+        {hasData && route === "/" && (
+          <OverviewPage
+            summary={summary}
+            trends={trends}
+            filters={filters}
+            onFilterChange={changeFilters}
+          />
+        )}
 
-            <div className="grid-2">
-              <CategoryChart
-                categories={summary.by_category}
-                selected={filters.category}
-                onSelect={(category) =>
-                  changeFilters({
-                    ...filters,
-                    category: filters.category === category ? "" : category,
-                  })
-                }
-              />
-              <TopMerchants merchants={summary.top_merchants} />
-            </div>
+        {hasData && route === "/transactions" && (
+          <TransactionsPage
+            page={page}
+            categories={categories}
+            sources={sources}
+            months={months}
+            filters={filters}
+            searchInput={searchInput}
+            onSearchChange={setSearchInput}
+            onFilterChange={changeFilters}
+            onReset={() => changeFilters(EMPTY_FILTERS)}
+            onChangeCategory={handleCategoryChange}
+            savingId={savingId}
+            offset={offset}
+            onOffsetChange={setOffset}
+            loading={loading}
+          />
+        )}
 
-            <div className="card">
-              <Filters
-                filters={filters}
-                months={months}
-                // Only categories that have rows. Offering an option that
-                // can only ever return "no transactions match" is noise.
-                categories={categories.filter((entry) => entry.count > 0)}
-                sources={sources}
-                searchValue={searchInput}
-                onSearchChange={setSearchInput}
-                onChange={changeFilters}
-                onReset={() => changeFilters(EMPTY_FILTERS)}
-              />
-            </div>
+        {hasData && route === "/unusual" && <UnusualPage anomalies={anomalies} />}
 
-            {/* The table stays mounted while refetching. Swapping it for a
-                spinner on every filter change makes the page flash and loses
-                your scroll position. */}
-            <div style={{ opacity: loading ? 0.55 : 1, transition: "opacity .15s" }}>
-              <TransactionTable
-                page={page}
-                categories={categories}
-                onChangeCategory={handleCategoryChange}
-                savingId={savingId}
-                offset={offset}
-                onOffsetChange={setOffset}
-              />
-            </div>
-          </>
+        {hasData && route === "/model" && (
+          <ModelPage
+            summary={summary}
+            onRetrained={loadDashboard}
+            onError={showError}
+          />
         )}
       </div>
 

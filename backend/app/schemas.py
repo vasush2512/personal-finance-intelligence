@@ -79,6 +79,13 @@ class MerchantTotal(BaseModel):
         return f"{total:.2f}"
 
 
+class LabellerCount(BaseModel):
+    """How many rows a given labeller ('rule', 'model', 'user') accounts for."""
+
+    source: str
+    count: int
+
+
 class Summary(BaseModel):
     """GET /api/summary. Spending excludes transfers — see aggregations.py."""
 
@@ -87,6 +94,7 @@ class Summary(BaseModel):
     net: Decimal
     transaction_count: int
     by_category: list[CategoryTotal]
+    by_category_source: list[LabellerCount]
     top_merchants: list[MerchantTotal]
 
     @field_serializer("total_spent", "total_income", "net")
