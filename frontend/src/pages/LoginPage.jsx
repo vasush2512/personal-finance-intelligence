@@ -1,28 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import * as api from "../api.js";
+import OtpInput from "../components/OtpInput.jsx";
 import "../login.css";
 
 /**
- * The lock screen.
+ * Phone sign-in, in two steps: number, then the code sent to it.
  *
- * Read this before judging it: it is a presentation surface, not security.
- * There is no account, no server-side session and no encryption. Anyone with
- * the machine can open backend/data/expenses.db and read everything, and the
- * API answers every request whether this screen was passed or not.
+ * Read this before judging it: it is a demonstration of an OTP flow, not
+ * security. There is no SMS provider, so the code comes back in the response
+ * and is shown on screen. Verifying creates no session — the API answers
+ * every request whether you signed in or not, and the database is
+ * unencrypted on disk.
  *
- * The screen says so itself rather than implying a protection it does not
- * provide. A login box that looks like a lock but is not one teaches the
- * person using it the wrong thing about their own data.
+ * The screen says all of that on itself. A sign-in that looks like a lock but
+ * is not one teaches the person using it the wrong thing about their data.
  *
- * PRD section 3 lists accounts and authentication as non-goals; this exists
- * because it was asked for, and is deliberately the smallest thing that can
- * be called a login screen.
+ * What is modelled honestly, because these are the parts worth knowing:
+ * expiry, a cap on wrong guesses, a resend cooldown, and single use.
  */
 
-const PASSCODE = "demo";
-const STORAGE_KEY = "expense-tracker-unlocked";
+const STORAGE_KEY = "expense-tracker-session";
 
-/** Thematic drifting chips: the app's own subject matter, not confetti. */
 const CHIPS = [
   { label: "Swiggy", amount: "₹409", color: "#2a78d6" },
   { label: "Blinkit", amount: "₹1,051", color: "#1baf7a" },
@@ -36,18 +35,27 @@ const CHIPS = [
   { label: "Udemy", amount: "₹2,611", color: "#3987e5" },
 ];
 
-/** True if this browser tab has already been unlocked. */
-export function isUnlocked() {
+/** The signed-in phone, or null. */
+export function currentSession() {
   try {
-    return sessionStorage.getItem(STORAGE_KEY) === "yes";
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     // Private browsing can make sessionStorage throw. Failing open is right:
-    // this gate protects nothing, so it must never lock someone out.
-    return true;
+    // this gate protects nothing, so it must never lock anybody out.
+    return { phone: "", display_phone: "guest", degraded: true };
   }
 }
 
-export function lock() {
+function rememberSession(session) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    /* the screen simply reappears next time */
+  }
+}
+
+export function clearSession() {
   try {
     sessionStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -55,77 +63,108 @@ export function lock() {
   }
 }
 
-function remember() {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, "yes");
-  } catch {
-    /* the gate simply reappears next time */
-  }
-}
+export default function LoginPage({ onSignedIn }) {
+  const [step, setStep] = useState("phone");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [challenge, setChallenge] = useState(null);
 
-export default function LoginPage({ onUnlock }) {
-  const [passcode, setPasscode] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shaking, setShaking] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const inputRef = useRef(null);
+
+  const [expiresIn, setExpiresIn] = useState(0);
+  const [resendIn, setResendIn] = useState(0);
+
+  const phoneRef = useRef(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (step === "phone") phoneRef.current?.focus();
+  }, [step]);
 
-  /**
-   * Positions and timings are chosen once and kept.
-   *
-   * Recomputing them on every render would make every chip jump to a new
-   * place and restart its animation each time a key is pressed.
-   */
+  /** One ticker drives both countdowns. */
+  useEffect(() => {
+    if (step !== "code") return undefined;
+    const timer = setInterval(() => {
+      setExpiresIn((seconds) => Math.max(0, seconds - 1));
+      setResendIn((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [step]);
+
   const chips = useMemo(
     () =>
       CHIPS.map((chip, index) => {
         // Two bands down the sides, leaving the middle clear for the card.
-        // Alternating rather than random keeps the two sides balanced.
         const onLeft = index % 2 === 0;
-        const offset = ((index * 7) % 18) - 9; // -9%..+9% of spread
+        const offset = ((index * 7) % 18) - 9;
         return {
           ...chip,
           left: `${(onLeft ? 16 : 84) + offset}%`,
           duration: `${17 + ((index * 3.1) % 11)}s`,
           // Negative delays start each chip partway through its loop, so the
-          // screen is already populated on the first frame instead of empty.
+          // screen is already populated on the first frame.
           delay: `${-(index * 2.3).toFixed(1)}s`,
         };
       }),
     []
   );
 
-  function submit(event) {
-    event.preventDefault();
-    if (checking || leaving) return;
-
-    setChecking(true);
-    setError("");
-
-    // A short pause so the button's loading state is visible rather than
-    // flickering. There is nothing to wait for — nothing is being verified
-    // against anything.
-    setTimeout(() => {
-      if (passcode.trim().toLowerCase() === PASSCODE) {
-        remember();
-        setLeaving(true);
-        // Let the screen finish lifting away before the dashboard mounts.
-        setTimeout(onUnlock, 620);
-        return;
-      }
-
-      setChecking(false);
-      setError(`That is not the passcode. It is "${PASSCODE}".`);
-      setShaking(true);
-      setTimeout(() => setShaking(false), 400);
-      inputRef.current?.select();
-    }, 480);
+  function fail(message) {
+    setError(message);
+    setShaking(true);
+    setTimeout(() => setShaking(false), 400);
   }
+
+  async function sendCode(event) {
+    event?.preventDefault();
+    if (busy) return;
+
+    setBusy(true);
+    setError("");
+    try {
+      const issued = await api.requestOtp(phone);
+      setChallenge(issued);
+      setExpiresIn(issued.expires_in);
+      setResendIn(issued.resend_in);
+      setCode("");
+      setStep("code");
+    } catch (requestError) {
+      fail(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitCode(submitted) {
+    const entered = (submitted ?? code).replace(/\D/g, "");
+    if (busy || entered.length < 6) return;
+
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.verifyOtp(challenge.phone, entered);
+      rememberSession(result);
+      setLeaving(true);
+      // Let the screen finish lifting away before the dashboard mounts.
+      setTimeout(() => onSignedIn(result), 620);
+    } catch (verifyError) {
+      setBusy(false);
+      setCode("");
+      fail(verifyError.message);
+    }
+  }
+
+  function changeNumber() {
+    setStep("phone");
+    setCode("");
+    setError("");
+    setChallenge(null);
+  }
+
+  const minutes = Math.floor(expiresIn / 60);
+  const seconds = String(expiresIn % 60).padStart(2, "0");
 
   return (
     <div className={`lock ${leaving ? "unlocking" : ""}`}>
@@ -158,65 +197,132 @@ export default function LoginPage({ onUnlock }) {
 
       <form
         className={`lock-card ${shaking ? "shake" : ""}`}
-        onSubmit={submit}
+        onSubmit={step === "phone" ? sendCode : (event) => {
+          event.preventDefault();
+          submitCode();
+        }}
         aria-labelledby="lock-title"
       >
-        <div className="stagger">
-          <div className="lock-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-
-          <h1 className="lock-title" id="lock-title">
-            Expense Tracker
-          </h1>
-
-          <p className="lock-subtitle">
-            Bank statements in. Categorized spending, monthly trends and
-            unusual charges out.
-          </p>
-
-          <div className="lock-field">
-            <input
-              ref={inputRef}
-              id="passcode"
-              type="password"
-              value={passcode}
-              placeholder=" "
-              autoComplete="off"
-              spellCheck="false"
-              onChange={(event) => setPasscode(event.target.value)}
-              aria-describedby="lock-disclosure"
-              aria-invalid={Boolean(error)}
-            />
-            <label htmlFor="passcode">Passcode</label>
-          </div>
-
-          <button className="lock-button" type="submit" disabled={checking}>
-            {checking ? (
-              <>
-                <span className="spinner" aria-hidden="true" />
-                Opening…
-              </>
-            ) : (
-              "Open dashboard"
-            )}
-          </button>
-
-          <p className="lock-error" role="alert">
-            {error}
-          </p>
+        <div className="lock-mark" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
         </div>
 
-        <p className="lock-disclosure" id="lock-disclosure">
-          The passcode is <span className="lock-hint">demo</span>. This screen
-          is presentation only — it is not security. There is no account and no
-          session on the server; the API answers whether you pass this screen
+        <h1 className="lock-title" id="lock-title">
+          Expense Tracker
+        </h1>
+
+        {step === "phone" ? (
+          <div className="step stagger" key="phone">
+            <p className="lock-subtitle">
+              Sign in with your mobile number. We will send a six-digit code.
+            </p>
+
+            <div className="lock-field phone-field">
+              <span className="country" aria-hidden="true">
+                +91
+              </span>
+              <input
+                ref={phoneRef}
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                value={phone}
+                placeholder=" "
+                maxLength={14}
+                onChange={(event) => setPhone(event.target.value)}
+                aria-invalid={Boolean(error)}
+              />
+              <label htmlFor="phone">Mobile number</label>
+            </div>
+
+            <button className="lock-button" type="submit" disabled={busy}>
+              {busy ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Sending…
+                </>
+              ) : (
+                "Send code"
+              )}
+            </button>
+
+            <p className="lock-error" role="alert">
+              {error}
+            </p>
+          </div>
+        ) : (
+          <div className="step stagger" key="code">
+            <p className="lock-subtitle">
+              Code sent to <strong>{challenge.display_phone}</strong>.{" "}
+              <button type="button" className="link" onClick={changeNumber}>
+                Change
+              </button>
+            </p>
+
+            {/* There is no SMS, so the code has to appear somewhere. */}
+            <div className="demo-code" role="status">
+              <span>No SMS provider — your code is</span>
+              <strong>{challenge.demo_code}</strong>
+            </div>
+
+            <OtpInput
+              value={code}
+              onChange={setCode}
+              onComplete={submitCode}
+              disabled={busy || expiresIn === 0}
+            />
+
+            <button
+              className="lock-button"
+              type="submit"
+              disabled={busy || code.replace(/\D/g, "").length < 6}
+            >
+              {busy ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Verifying…
+                </>
+              ) : (
+                "Verify and open"
+              )}
+            </button>
+
+            <div className="code-meta">
+              {expiresIn > 0 ? (
+                <span>
+                  Expires in {minutes}:{seconds}
+                </span>
+              ) : (
+                <span className="expired">Code expired</span>
+              )}
+
+              <button
+                type="button"
+                className="link"
+                onClick={sendCode}
+                disabled={busy || resendIn > 0}
+              >
+                {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
+              </button>
+            </div>
+
+            <p className="lock-error" role="alert">
+              {error}
+            </p>
+          </div>
+        )}
+
+        <p className="lock-disclosure">
+          Demonstration only — this is not security. No account exists and no
+          session is created on the server; the API answers whether you sign in
           or not, and your transactions sit unencrypted in{" "}
-          <span className="lock-hint">backend/data/expenses.db</span>.
+          <span className="lock-hint">backend/data/expenses.db</span>. The code
+          is shown above because there is nothing to send it with.
         </p>
       </form>
     </div>

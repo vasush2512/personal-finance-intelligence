@@ -112,6 +112,38 @@ class TrendPoint(BaseModel):
         return f"{amount:.2f}"
 
 
+class OtpRequest(BaseModel):
+    """A phone number, in whatever shape the user typed it."""
+
+    phone: str
+
+
+class OtpChallenge(BaseModel):
+    """The issued challenge.
+
+    `demo_code` exists only because there is no SMS provider to deliver the
+    code with. A real API never returns the code it just issued.
+    """
+
+    phone: str
+    display_phone: str
+    expires_in: int
+    resend_in: int
+    attempts_allowed: int
+    demo_code: str
+
+
+class OtpVerify(BaseModel):
+    phone: str
+    code: str
+
+
+class OtpVerification(BaseModel):
+    verified: bool
+    phone: str
+    display_phone: str
+
+
 class CategoryOption(BaseModel):
     """A category and how many transactions currently carry it."""
 

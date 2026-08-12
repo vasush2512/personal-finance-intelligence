@@ -60,6 +60,40 @@ function queryString(params) {
   return query ? `?${query}` : "";
 }
 
+/**
+ * Ask for a one-time code.
+ *
+ * The response includes the code itself, because the backend has no way to
+ * send an SMS. See backend/app/services/otp.py for why that is acceptable
+ * here and unacceptable anywhere real.
+ */
+export function requestOtp(phone) {
+  return request("/api/auth/otp/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone }),
+  });
+}
+
+export function verifyOtp(phone, code) {
+  return request("/api/auth/otp/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, code }),
+  });
+}
+
+/** Drops any half-finished sign-in. There is no session to end. */
+export async function signOut(phone) {
+  const response = await fetch(`${BASE_URL}/api/auth/sign-out`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone }),
+  });
+  // 204 has no body to parse, and a failure here must not block signing out.
+  return response.ok;
+}
+
 /** The category vocabulary. Comes from the backend so it has one home. */
 export function getCategories() {
   return request("/api/categories");

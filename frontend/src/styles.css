@@ -63,6 +63,19 @@ header.masthead p {
   margin: 0;
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-phone {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .lock-again {
   font-size: 13px;
   padding: 5px 12px;

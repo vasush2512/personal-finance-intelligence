@@ -7,7 +7,7 @@ import { decodeSource, encodeSource } from "./components/Filters.jsx";
 import { PAGE_SIZE } from "./components/TransactionTable.jsx";
 import { formatMonth } from "./format.js";
 import FilesPage from "./pages/FilesPage.jsx";
-import LoginPage, { isUnlocked, lock } from "./pages/LoginPage.jsx";
+import LoginPage, { clearSession, currentSession } from "./pages/LoginPage.jsx";
 import ModelPage from "./pages/ModelPage.jsx";
 import OverviewPage from "./pages/OverviewPage.jsx";
 import TransactionsPage from "./pages/TransactionsPage.jsx";
@@ -29,7 +29,8 @@ export default function App() {
 
   // Presentation only — see LoginPage. Nothing behind this is protected, so
   // the gate lives entirely in the browser and never gates a request.
-  const [unlocked, setUnlocked] = useState(isUnlocked);
+  const [session, setSession] = useState(currentSession);
+  const unlocked = Boolean(session);
 
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -281,8 +282,24 @@ export default function App() {
     "/files": sources.length,
   };
 
+  /**
+   * Sign out. Local, because the session is local.
+   *
+   * The server call only drops a half-finished code, so a sign-in that was
+   * abandoned mid-way cannot be resumed afterwards. It is fire-and-forget:
+   * a failure there must not leave someone stuck signed in.
+   */
+  function handleSignOut() {
+    if (session?.phone) api.signOut(session.phone).catch(() => {});
+    clearSession();
+    setSession(null);
+    setFilters(EMPTY_FILTERS);
+    setSearchInput("");
+    setOffset(0);
+  }
+
   if (!unlocked) {
-    return <LoginPage onUnlock={() => setUnlocked(true)} />;
+    return <LoginPage onSignedIn={setSession} />;
   }
 
   return (
@@ -299,15 +316,12 @@ export default function App() {
               {filters.month ? ` in ${formatMonth(filters.month)}` : " tracked"}
             </p>
           )}
-          <button
-            className="lock-again"
-            onClick={() => {
-              lock();
-              setUnlocked(false);
-            }}
-          >
-            Lock
-          </button>
+          <div className="account">
+            <span className="account-phone">{session.display_phone}</span>
+            <button className="lock-again" onClick={handleSignOut}>
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
