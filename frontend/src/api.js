@@ -77,6 +77,10 @@ export function getTrends() {
   return request("/api/trends");
 }
 
+export function getAnomalies() {
+  return request("/api/anomalies");
+}
+
 export function updateCategory(id, category) {
   return request(`/api/transactions/${id}`, {
     method: "PATCH",

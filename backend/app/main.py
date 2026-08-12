@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import FRONTEND_ORIGIN
 from app.db import create_all
-from app.routers import analytics, model, transactions, uploads
+from app.routers import analytics, anomalies, model, transactions, uploads
 
 # Imported for the side effect of registering the models on Base.metadata,
 # so create_all() actually sees them.
@@ -45,6 +45,7 @@ app.include_router(uploads.router)
 app.include_router(transactions.router)
 app.include_router(model.router)
 app.include_router(analytics.router)
+app.include_router(anomalies.router)
 
 
 @app.get("/health")

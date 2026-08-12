@@ -43,6 +43,22 @@ class TransactionOut(BaseModel):
         return f"{amount:.2f}"
 
 
+class Anomaly(BaseModel):
+    """One unusually large debit, with the sentence explaining why."""
+
+    id: int
+    date: dt.date
+    description: str
+    amount: Decimal
+    direction: str
+    category: str
+    reason: str
+
+    @field_serializer("amount")
+    def serialize_amount(self, amount: Decimal) -> str:
+        return f"{amount:.2f}"
+
+
 class CategoryTotal(BaseModel):
     category: str
     total: Decimal

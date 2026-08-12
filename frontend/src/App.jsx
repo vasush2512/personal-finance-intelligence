@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import * as api from "./api.js";
+import AnomaliesPanel from "./components/AnomaliesPanel.jsx";
 import CategoryChart from "./components/CategoryChart.jsx";
 import Filters from "./components/Filters.jsx";
 import SummaryCards from "./components/SummaryCards.jsx";
@@ -18,6 +19,7 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState([]);
+  const [anomalies, setAnomalies] = useState([]);
   const [page, setPage] = useState({ items: [], total: 0 });
 
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -54,13 +56,15 @@ export default function App() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryData, trendData, pageData] = await Promise.all([
+      const [summaryData, trendData, anomalyData, pageData] = await Promise.all([
         api.getSummary(filters.month),
         api.getTrends(),
+        api.getAnomalies(),
         api.getTransactions({ ...filters, limit: PAGE_SIZE, offset }),
       ]);
       setSummary(summaryData);
       setTrends(trendData);
+      setAnomalies(anomalyData);
       setPage(pageData);
     } catch (error) {
       showError(error);
@@ -180,6 +184,8 @@ export default function App() {
             />
 
             <TrendChart trends={trends} />
+
+            <AnomaliesPanel anomalies={anomalies} />
 
             <div className="grid-2">
               <CategoryChart
