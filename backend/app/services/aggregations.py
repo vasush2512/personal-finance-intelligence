@@ -15,7 +15,7 @@ import datetime as dt
 from collections import defaultdict
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Transaction
@@ -111,29 +111,39 @@ def merchant_name(normalized_description: str) -> str:
     return words[0] if words else "unknown"
 
 
-def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT):
-    """Biggest merchants by total spend.
+def _merchant_expression():
+    """The same first-word rule as merchant_name(), expressed in SQL.
 
-    Grouped in Python because the merchant is derived from the text, and
-    SQLite has no clean way to split a string inside a GROUP BY.
+    Doing it here rather than in Python is what keeps this query from
+    dragging every spending row into memory just to read its first word.
+    A space at position n means the merchant is the first n-1 characters;
+    no space means the whole string is the merchant.
     """
+    description = Transaction.normalized_description
+    space_at = func.instr(description, " ")
+    return case(
+        (description == "", "unknown"),
+        (space_at > 0, func.substr(description, 1, space_at - 1)),
+        else_=description,
+    )
+
+
+def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT):
+    """Biggest merchants by total spend."""
+    merchant = _merchant_expression()
+
     rows = session.execute(
-        select(Transaction.normalized_description, Transaction.amount)
+        select(merchant, func.sum(Transaction.amount), func.count(Transaction.id))
         .where(*(spending_conditions() + month_conditions(month)))
+        .group_by(merchant)
+        .order_by(func.sum(Transaction.amount).desc())
+        .limit(limit)
     ).all()
 
-    totals = defaultdict(lambda: {"total": ZERO, "count": 0})
-    for description, amount in rows:
-        entry = totals[merchant_name(description)]
-        entry["total"] += amount
-        entry["count"] += 1
-
-    merchants = [
-        {"merchant": name, "total": entry["total"], "count": entry["count"]}
-        for name, entry in totals.items()
+    return [
+        {"merchant": name or "unknown", "total": total, "count": count}
+        for name, total, count in rows
     ]
-    merchants.sort(key=lambda row: row["total"], reverse=True)
-    return merchants[:limit]
 
 
 def summary(session: Session, month=None) -> dict:
@@ -157,23 +167,18 @@ def monthly_trends(session: Session):
     Months with no transactions are not invented - the chart shows the
     months the statements actually cover.
     """
+    month_column = func.strftime("%Y-%m", Transaction.date)
+
     rows = session.execute(
-        select(
-            func.strftime("%Y-%m", Transaction.date),
-            Transaction.direction,
-            Transaction.category,
-            Transaction.amount,
-        )
+        select(month_column, Transaction.direction, func.sum(Transaction.amount))
+        .where(Transaction.category.notin_(NON_SPENDING))
+        .group_by(month_column, Transaction.direction)
     ).all()
 
     by_month = defaultdict(lambda: {"spent": ZERO, "income": ZERO})
-    for month, direction, category, amount in rows:
-        if category in NON_SPENDING:
-            continue
-        if direction == "debit":
-            by_month[month]["spent"] += amount
-        else:
-            by_month[month]["income"] += amount
+    for month, direction, total in rows:
+        key = "spent" if direction == "debit" else "income"
+        by_month[month][key] += total
 
     return [
         {"month": month, "spent": values["spent"], "income": values["income"]}

@@ -9,16 +9,31 @@ being one once similar charges arrive. A stored column would quietly go
 stale, and nothing would ever recompute it.
 """
 
+import datetime as dt
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ml.anomalies import detect_anomalies
+from app.ml.anomalies import LOOKBACK_DAYS, detect_anomalies
 from app.models import Transaction
 
 
-def as_plain_rows(session: Session):
-    """Every transaction, in the shape detect_anomalies expects."""
-    transactions = session.execute(select(Transaction)).scalars().all()
+def as_plain_rows(session: Session, today=None):
+    """The rows detect_anomalies can actually use, in the shape it expects.
+
+    Only debits inside the lookback window matter — the detector discards
+    everything else on its first pass. Filtering in SQL instead of in Python
+    is the difference between reading a hundred thousand rows and reading a
+    few hundred.
+    """
+    today = today or dt.date.today()
+    cutoff = today - dt.timedelta(days=LOOKBACK_DAYS)
+
+    transactions = session.execute(
+        select(Transaction)
+        .where(Transaction.direction == "debit", Transaction.date >= cutoff)
+    ).scalars().all()
+
     return [
         {
             "id": row.id,
@@ -34,4 +49,4 @@ def as_plain_rows(session: Session):
 
 def find_anomalies(session: Session, today=None):
     """Unusually large debits, newest first, each with a readable reason."""
-    return detect_anomalies(as_plain_rows(session), today=today)
+    return detect_anomalies(as_plain_rows(session, today), today=today)
