@@ -4,13 +4,15 @@ The parsing itself lives in parser.py. This module owns the database side:
 dropping rows we have already seen, writing the Upload record, and reporting
 the counts back.
 
-Categorization is not done here — that is Phase 3. Every row imported now
-lands as 'other'.
+Rows are categorized on the way in, by the keyword rules in app/ml. The
+route handler never touches that code — it calls import_statement and the
+categorization happens here.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ml.categorizer import apply_rules
 from app.models import Transaction, Upload
 from app.services.parser import parse_statement
 
@@ -66,6 +68,10 @@ def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict
     known = find_known_fingerprints(session, {row["fingerprint"] for row in parsed_rows})
     new_rows, duplicates = split_new_from_duplicates(parsed_rows, known)
 
+    # Stage 1 of categorization. Sets category / category_source / confidence
+    # on each dict in place; anything no rule matches stays 'other'.
+    apply_rules(new_rows)
+
     upload = Upload(
         filename=filename,
         rows_parsed=len(parsed_rows),
@@ -86,8 +92,9 @@ def import_statement(session: Session, filename: str, file_bytes: bytes) -> dict
                 amount=row["amount"],
                 direction=row["direction"],
                 fingerprint=row["fingerprint"],
-                # category and category_source keep their model defaults
-                # ('other' / 'rule') until Phase 3 categorizes them.
+                category=row["category"],
+                category_source=row["category_source"],
+                confidence=row["confidence"],
             )
         )
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.constants import CATEGORIES
 from app.db import get_session
 from app.models import Transaction
-from app.schemas import TransactionPage
+from app.schemas import TransactionOut, TransactionPage, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -95,3 +95,31 @@ def list_transactions(
     ).scalars().all()
 
     return TransactionPage(total=total, limit=limit, offset=offset, items=rows)
+
+
+@router.patch("/transactions/{transaction_id}", response_model=TransactionOut)
+def correct_category(
+    transaction_id: int,
+    update: TransactionUpdate,
+    session: Session = Depends(get_session),
+):
+    """Change one transaction's category.
+
+    Marks the row as 'user'. That label is permanent: neither the rules nor
+    the model will overwrite it on a later import or retrain, and it becomes
+    training data the next time the model is fitted.
+    """
+    transaction = session.get(Transaction, transaction_id)
+    if transaction is None:
+        raise HTTPException(
+            status_code=404, detail=f"No transaction with id {transaction_id}."
+        )
+
+    transaction.category = update.category
+    transaction.category_source = "user"
+    # A human decided this, so there is no model probability to report.
+    transaction.confidence = None
+
+    session.commit()
+    session.refresh(transaction)
+    return transaction

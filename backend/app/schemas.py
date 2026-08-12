@@ -8,7 +8,9 @@ line, and JavaScript has no decimal type to receive it safely.
 import datetime as dt
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+
+from app.constants import CATEGORIES
 
 
 class UploadResult(BaseModel):
@@ -39,6 +41,25 @@ class TransactionOut(BaseModel):
     @field_serializer("amount")
     def serialize_amount(self, amount: Decimal) -> str:
         return f"{amount:.2f}"
+
+
+class TransactionUpdate(BaseModel):
+    """Body of PATCH /api/transactions/{id}.
+
+    Category is the only editable field. Date, amount and description come
+    from the bank and are not the user's to rewrite.
+    """
+
+    category: str
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_known(cls, value: str) -> str:
+        if value not in CATEGORIES:
+            raise ValueError(
+                f"Unknown category {value!r}. Valid: {', '.join(CATEGORIES)}"
+            )
+        return value
 
 
 class TransactionPage(BaseModel):

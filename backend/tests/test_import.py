@@ -163,12 +163,12 @@ def test_transactions_are_linked_to_their_upload(session):
     assert set(upload_ids) == {result["upload_id"]}
 
 
-def test_phase_2_leaves_everything_uncategorized(session):
-    """Categorization is Phase 3. Every row should still be 'other'."""
+def test_rows_are_categorized_on_the_way_in(session):
+    """Phase 3: the keyword rules run during import, not on a later pass."""
     import_statement(session, "statement.csv", TWO_COLUMN_CSV)
 
     categories = session.execute(select(Transaction.category)).scalars().all()
-    assert set(categories) == {"other"}
+    assert set(categories) == {"food", "income", "groceries"}
 
 
 def test_deleting_an_upload_removes_its_transactions(session):
