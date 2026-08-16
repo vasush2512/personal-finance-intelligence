@@ -14,7 +14,7 @@ lakh grouping (`1,25,000.50`), and separate withdrawal/deposit columns.
 
 | | |
 |---|---|
-| ![Dashboard](docs/dashboard.png) | ![Transactions](docs/transactions.png) |
+| | |
 | Summary cards, monthly trend, category breakdown | Filterable table with inline re-categorization |
 
 ## Stack
