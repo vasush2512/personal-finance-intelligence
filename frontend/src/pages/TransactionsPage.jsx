@@ -1,5 +1,7 @@
-import Filters from "../components/Filters.jsx";
+import ExportMenu from "../components/ExportMenu.jsx";
+import Filters, { decodeSource } from "../components/Filters.jsx";
 import TransactionTable from "../components/TransactionTable.jsx";
+import Card, { CardHead } from "../components/ui/Card.jsx";
 
 /** The list, and everything for narrowing it. */
 export default function TransactionsPage({
@@ -17,10 +19,48 @@ export default function TransactionsPage({
   offset,
   onOffsetChange,
   loading,
+  onOpen,
+  onError,
+  onSuccess,
+  tags = [],
+  accounts = [],
+  paymentMethods = [],
 }) {
+  const isFiltered = Boolean(
+    filters.month ||
+      filters.category ||
+      filters.source ||
+      filters.direction ||
+      searchInput
+  );
+
   return (
-    <>
-      <div className="card">
+    <div className="stack">
+      <Card>
+        <CardHead
+          title="Filters"
+          description="Every option is built from what is actually in your data"
+          actions={
+            <ExportMenu
+              // `source` is the dropdown's encoded "3::June"; the API takes
+              // upload_id and sheet, exactly as every other call does.
+              params={{
+                month: filters.month,
+                category: filters.category,
+                direction: filters.direction,
+                search: searchInput,
+                ...decodeSource(filters.source),
+              }}
+              scopeLabel={
+                isFiltered
+                  ? "Downloads the filtered rows"
+                  : `Downloads all ${page.total.toLocaleString("en-IN")} rows`
+              }
+              onError={onError}
+              onSuccess={onSuccess}
+            />
+          }
+        />
         <Filters
           filters={filters}
           months={months}
@@ -32,13 +72,23 @@ export default function TransactionsPage({
           onSearchChange={onSearchChange}
           onChange={onFilterChange}
           onReset={onReset}
+          tags={tags}
+          accounts={accounts}
+          paymentMethods={paymentMethods}
         />
-      </div>
+      </Card>
 
-      {/* The table stays mounted while refetching. Swapping it for a spinner
+      {/* The table stays mounted while refetching. Swapping it for a skeleton
           on every filter change makes the page flash and loses your scroll
-          position. */}
-      <div style={{ opacity: loading ? 0.55 : 1, transition: "opacity .15s" }}>
+          position — so it dims instead, which reads as "updating" rather than
+          "gone". */}
+      <div
+        style={{
+          opacity: loading ? 0.55 : 1,
+          transition: "opacity var(--fast) var(--ease)",
+        }}
+        aria-busy={loading}
+      >
         <TransactionTable
           page={page}
           categories={categories}
@@ -46,8 +96,11 @@ export default function TransactionsPage({
           savingId={savingId}
           offset={offset}
           onOffsetChange={onOffsetChange}
+          onClearFilters={onReset}
+          isFiltered={isFiltered}
+          onOpen={onOpen}
         />
       </div>
-    </>
+    </div>
   );
 }

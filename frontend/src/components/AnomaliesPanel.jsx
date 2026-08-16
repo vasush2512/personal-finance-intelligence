@@ -1,4 +1,8 @@
+import { IconCheckCircle } from "../icons.jsx";
 import { formatDate, formatMoneyExact, shortenDescription } from "../format.js";
+import Card, { CardHead, ChartNote } from "./ui/Card.jsx";
+import Badge from "./ui/Badge.jsx";
+import { EmptyState } from "./ui/Feedback.jsx";
 
 /**
  * Unusually large spending, with the reason spelled out.
@@ -8,53 +12,76 @@ import { formatDate, formatMoneyExact, shortenDescription } from "../format.js";
  * mark tells you nothing and trains you to ignore it.
  *
  * A flag is not an accusation. A genuinely large dinner is unusual and also
- * fine, which is why nothing here is styled as an error.
+ * fine, which is why nothing here is styled as an error — the badge is amber,
+ * not red, and the empty state is the reassuring one.
  */
-export default function AnomaliesPanel({ anomalies }) {
+export default function AnomaliesPanel({ anomalies, limit }) {
+  const rows = limit ? anomalies.slice(0, limit) : anomalies;
+
   return (
-    <div className="card">
-      <h2>Unusual spending</h2>
+    <Card>
+      <CardHead
+        title="Unusual spending"
+        description={
+          anomalies.length > 0
+            ? `${anomalies.length} transaction${anomalies.length === 1 ? "" : "s"} stand out`
+            : undefined
+        }
+        bordered
+      />
 
       {anomalies.length === 0 ? (
-        <p className="chart-note">
-          Nothing out of the ordinary. A transaction is flagged when it is far
-          above the usual for its category, and only once that category has at
-          least eight earlier transactions to compare against.
-        </p>
+        <EmptyState
+          icon={IconCheckCircle}
+          title="Nothing out of the ordinary"
+          description="A transaction is flagged when it is far above the usual for its category, and only once that category has at least eight earlier transactions to compare against."
+        />
       ) : (
         <>
-          <div style={{ overflowX: "auto" }}>
-            <table>
+          <div className="table-wrap">
+            <table className="cards-on-mobile">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Description</th>
-                  <th className="amount">Amount</th>
+                  <th className="right">Amount</th>
                   <th>Why it stands out</th>
                 </tr>
               </thead>
               <tbody>
-                {anomalies.map((anomaly) => (
+                {rows.map((anomaly) => (
                   <tr key={anomaly.id}>
-                    <td className="date">{formatDate(anomaly.date)}</td>
-                    <td className="description" title={anomaly.description}>
-                      {shortenDescription(anomaly.description, 38)}
+                    <td className="date" data-label="Date">
+                      {formatDate(anomaly.date)}
                     </td>
-                    <td className="amount">{formatMoneyExact(anomaly.amount)}</td>
-                    <td>{anomaly.reason}</td>
+                    <td
+                      className="desc"
+                      data-label="Description"
+                      title={anomaly.description}
+                    >
+                      {shortenDescription(anomaly.description, 40)}
+                    </td>
+                    <td className="num right" data-label="Amount">
+                      <span className="amount-out">
+                        {formatMoneyExact(anomaly.amount)}
+                      </span>
+                    </td>
+                    <td data-label="Why">
+                      <Badge tone="warning">{anomaly.reason}</Badge>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <p className="chart-note">
-            Flagged when an amount exceeds the category average by more than
-            2.5 standard deviations, over the trailing six months. Unusual does
-            not mean wrong — a big dinner is both.
-          </p>
+          <ChartNote>
+            Flagged when an amount exceeds its category average by more than 2.5
+            standard deviations over the trailing six months. Unusual does not
+            mean wrong — a big dinner is both.
+          </ChartNote>
         </>
       )}
-    </div>
+    </Card>
   );
 }

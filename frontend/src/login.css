@@ -1,5 +1,5 @@
 /**
- * The lock screen.
+ * The sign-in / sign-up screen.
  *
  * Everything here animates transform, opacity or filter only — those are the
  * properties a browser can hand to the GPU. Animating width, top or
@@ -418,102 +418,138 @@
   40%, 60% { transform: translate3d(7px, 0, 0); }
 }
 
-/* --- phone field --------------------------------------------------------- */
+/* --- the two tabs -------------------------------------------------------- */
 
-/* The country code sits inside the field, so the input is padded past it. */
-.phone-field .country {
+/*
+ * A segmented control. The highlight behind the labels is one absolutely
+ * positioned element moved with translateX, rather than a background that
+ * moves between the two buttons — a transform is the only way this animates
+ * without the browser repainting the whole control every frame.
+ */
+.mode-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mode-indicator {
   position: absolute;
-  left: 15px;
-  top: 17px;
-  font-size: 15px;
-  color: rgba(238, 242, 248, 0.55);
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
 }
 
-.phone-field input {
-  padding-left: 54px;
-  letter-spacing: 0.04em;
-}
-
-.phone-field label {
-  left: 54px;
-}
-
-/* --- one-time code ------------------------------------------------------- */
-
-.otp-row {
-  display: flex;
-  gap: 9px;
-  margin-bottom: 18px;
-}
-
-.otp-box {
-  flex: 1;
-  min-width: 0;
-  height: 56px;
-  text-align: center;
-  font-size: 21px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: #eef2f8;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  outline: none;
-  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s,
-    transform 0.18s;
-}
-
-.otp-box.filled {
-  background: rgba(42, 120, 214, 0.14);
-  border-color: rgba(42, 120, 214, 0.5);
-}
-
-.otp-box:focus {
-  border-color: rgba(42, 120, 214, 0.9);
-  box-shadow: 0 0 0 4px rgba(42, 120, 214, 0.18);
-  /* A small lift marks the active box without moving its neighbours. */
-  transform: translateY(-2px);
-}
-
-.otp-box:disabled {
-  opacity: 0.5;
-}
-
-/* The code, shown because there is no SMS to carry it. */
-.demo-code {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 11px 14px;
-  border-radius: 11px;
-  background: rgba(237, 161, 0, 0.1);
-  border: 1px dashed rgba(237, 161, 0, 0.45);
-  font-size: 12.5px;
-  color: rgba(238, 242, 248, 0.72);
-}
-
-.demo-code strong {
-  font-size: 19px;
-  letter-spacing: 0.22em;
-  font-variant-numeric: tabular-nums;
-  color: #ffd479;
-}
-
-.code-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  font-size: 12.5px;
+.mode-tabs button {
+  position: relative;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
   color: rgba(238, 242, 248, 0.55);
+  background: none;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 0.22s ease;
 }
 
-.code-meta .expired {
-  color: #ff9a9a;
+.mode-tabs button.active {
+  color: #eef2f8;
+}
+
+.mode-tabs button:hover:not(.active) {
+  color: rgba(238, 242, 248, 0.8);
+}
+
+/* --- password field ------------------------------------------------------ */
+
+/* Room for the Show/Hide button, so a long password never runs under it. */
+.password-field input {
+  padding-right: 62px;
+}
+
+.reveal {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: rgba(238, 242, 248, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.18s, background 0.18s;
+}
+
+.reveal:hover {
+  color: #eef2f8;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+/* --- password strength --------------------------------------------------- */
+
+.strength {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: -4px 0 18px;
+}
+
+.strength-track {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  flex: 1;
+}
+
+.strength-track span {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 0.3s ease;
+}
+
+/*
+ * Colour is never the only signal — the words beside the bars say the same
+ * thing, which is what makes this readable to someone who cannot separate
+ * the red from the green.
+ */
+.strength-track span.on.level-1 { background: #e34948; }
+.strength-track span.on.level-2 { background: #eda100; }
+.strength-track span.on.level-3 { background: #3987e5; }
+.strength-track span.on.level-4 { background: #1baf7a; }
+
+.strength-label {
+  font-size: 12px;
+  color: rgba(238, 242, 248, 0.55);
+  min-width: 104px;
+  text-align: right;
+}
+
+/* --- switching mode from the footer -------------------------------------- */
+
+.mode-switch {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(238, 242, 248, 0.55);
 }
 
 .link {

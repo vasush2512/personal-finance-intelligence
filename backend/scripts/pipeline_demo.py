@@ -13,10 +13,10 @@ from collections import Counter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.ml.anomalies import detect_anomalies                      # noqa: E402
-from app.ml.categorizer import apply_rules                          # noqa: E402
-from app.ml.trainer import NotEnoughData, categorize_unmatched, load_model, train  # noqa: E402
-from app.services.parser import parse_statement                     # noqa: E402
+from app.pipeline.s10_anomalies import detect_anomalies                      # noqa: E402
+from app.pipeline.s08_rules import apply_rules                          # noqa: E402
+from app.pipeline.s09_model import NotEnoughData, categorize_unmatched, load_model, train  # noqa: E402
+from app.pipeline.s07_parser import parse_statement                     # noqa: E402
 
 SAMPLE = os.path.join(os.path.dirname(__file__), "..", "data", "sample_statement.csv")
 

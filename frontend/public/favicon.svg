@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Expense Tracker">
+  <!--
+    The tab icon: the same wallet the sidebar brand mark uses, redrawn as
+    filled shapes rather than strokes.
+
+    A tab favicon renders at 16px. The stroked wallet from icons.jsx has 2px
+    lines and interior detail that turn to grey mush at that size, so this is
+    a solid silhouette on a filled tile instead: two shapes, one hole, and
+    nothing thinner than 2px anywhere.
+
+    The tile is brand blue rather than transparent so the mark keeps its
+    contrast on a light tab strip and a dark one alike — a white-on-nothing
+    glyph disappears against one of them, and browsers give you no way to
+    know which you are on.
+  -->
+  <rect width="32" height="32" rx="7" fill="#2563eb"/>
+
+  <!-- Wallet body, with the folded top edge that makes it read as a wallet
+       and not as a plain card. -->
+  <path fill="#fff" d="M7.5 12.4c0-2 1.6-3.6 3.6-3.6h9.8a1.1 1.1 0 0 1 0 2.2h-9.3a1 1 0 0 0 0 2h11.3c1.6 0 2.6 1 2.6 2.6v7.2c0 1.9-1.5 3.4-3.4 3.4H10.9c-1.9 0-3.4-1.5-3.4-3.4z"/>
+
+  <!-- The clasp. Punched out in the tile colour so it stays visible however
+       the browser scales the icon down. -->
+  <circle cx="21.1" cy="18.9" r="2.1" fill="#2563eb"/>
+</svg>

@@ -10,10 +10,10 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.ml.anomalies import detect_anomalies, _format_inr          # noqa: E402
-from app.ml.categorizer import categorize_by_rules                   # noqa: E402
-from app.services.normalize import normalize_description             # noqa: E402
-from app.services.parser import (                                    # noqa: E402
+from app.pipeline.s10_anomalies import detect_anomalies, _format_inr          # noqa: E402
+from app.pipeline.s08_rules import categorize_by_rules                   # noqa: E402
+from app.pipeline.s05_normalize import normalize_description             # noqa: E402
+from app.pipeline.s07_parser import (                                    # noqa: E402
     UnparseableStatement,
     parse_amount,
     parse_date,
@@ -213,3 +213,22 @@ def test_detects_a_clear_outlier():
 )
 def test_indian_number_formatting(amount, formatted):
     assert _format_inr(amount) == formatted
+
+
+# --- refunds are not income (§35) -----------------------------------------
+
+
+def test_a_refund_is_its_own_category_not_income():
+    """Money coming back is not money earned.
+
+    Labelled 'income', a returned ₹5,000 purchase showed as ₹5,000 earned —
+    inflating the savings rate, the health score and the income forecast with it.
+    """
+    for narration in ("refund amazon return", "cashback paytm",
+                      "reversal upi", "chargeback hdfc"):
+        assert categorize_by_rules(narration) == "refund", narration
+
+
+def test_real_income_is_still_income():
+    for narration in ("salary techcadd", "interest credit", "dividend hdfc"):
+        assert categorize_by_rules(narration) == "income", narration

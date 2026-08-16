@@ -4,17 +4,21 @@ This is Phases 2, 3 and 4 of the PRD: the parts that are actually hard and
 that make this an ML project rather than a CRUD app. Everything here was run
 and verified before you got it.
 
+Modules are numbered in reading order; `s05` to `s10` below is one bank row's
+journey from raw text to a category.
+
     backend/
-      app/constants.py              categories + ~60 keyword rules
-      app/services/normalize.py     narration cleaner + fingerprint
-      app/services/parser.py        messy bank CSV -> clean dicts
-      app/ml/categorizer.py         stage 1: rules
-      app/ml/trainer.py             stage 2: TF-IDF + LogisticRegression
-      app/ml/anomalies.py           unusual-spend detection
-      scripts/make_sample.py        regenerates the fake statement
-      scripts/pipeline_demo.py      runs the whole pipeline, prints stats
-      tests/test_core.py            42 test cases
-      data/sample_statement.csv     205 unique rows + duplicates + junk
+      app/core/s01_constants.py       categories + ~60 keyword rules
+      app/pipeline/s05_normalize.py   narration cleaner + fingerprint
+      app/pipeline/s06_readers.py     bytes -> rows (CSV / JSON / Excel)
+      app/pipeline/s07_parser.py      messy bank statement -> clean dicts
+      app/pipeline/s08_rules.py       stage 1: rules
+      app/pipeline/s09_model.py       stage 2: TF-IDF + LogisticRegression
+      app/pipeline/s10_anomalies.py   unusual-spend detection
+      scripts/make_sample.py          regenerates the fake statement
+      scripts/pipeline_demo.py        runs the whole pipeline, prints stats
+      tests/test_core.py              42 test cases
+      data/sample_statement.csv       205 unique rows + duplicates + junk
 
 ## Run it
 
@@ -52,7 +56,10 @@ Being able to say that out loud is worth more in an interview than the 0.98.
 
 ## What is NOT here
 
-FastAPI app, SQLAlchemy models, routes, and the Expo mobile app. Those are
-Phase 1, 5 and 6 — build them in Claude Code using BUILD_STEPS.md and
-MOBILE_ADDENDUM.md. These modules deliberately import nothing from FastAPI or
-SQLAlchemy, so they drop straight into the structure in CLAUDE.md.
+**Out of date as of 2026-08-14.** The FastAPI app, the SQLAlchemy models and
+every route are now built — see `app/core/`, `app/store/` and `app/routers/`,
+and PRD §11 for what is left (the frontend, which does not exist yet).
+
+What is still true is the constraint: nothing in `app/pipeline/` imports
+FastAPI or SQLAlchemy. That separation is why the modules above can be tested
+without a database or a server, and it is enforced by the folder layout.

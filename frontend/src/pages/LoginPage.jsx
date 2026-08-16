@@ -1,49 +1,59 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import * as api from "../api.js";
-import OtpInput from "../components/OtpInput.jsx";
 import "../login.css";
 
 /**
- * Phone sign-in, in two steps: number, then the code sent to it.
+ * Sign in or create an account, on one screen with two tabs.
  *
- * Read this before judging it: it is a demonstration of an OTP flow, not
- * security. There is no SMS provider, so the code comes back in the response
- * and is shown on screen. Verifying creates no session — the API answers
- * every request whether you signed in or not, and the database is
- * unencrypted on disk.
+ * Read this before judging it: the accounts are real — a row in the database
+ * with a properly salted, slow-hashed password, and the password itself is
+ * never stored or returned. What signing in does NOT do is protect anything.
+ * No other endpoint asks who is calling, so this unlocks the interface and
+ * nothing behind it, and the database sits unencrypted on disk.
  *
- * The screen says all of that on itself. A sign-in that looks like a lock but
- * is not one teaches the person using it the wrong thing about their data.
- *
- * What is modelled honestly, because these are the parts worth knowing:
- * expiry, a cap on wrong guesses, a resend cooldown, and single use.
+ * The screen says that on itself. A sign-in that looks like a lock but is not
+ * one teaches the person using it the wrong thing about their own data.
  */
 
 const STORAGE_KEY = "expense-tracker-session";
 
+/**
+ * Decoration for the sign-in background.
+ *
+ * Category names only — deliberately no amounts. Earlier these carried rupee
+ * figures ("Swiggy ₹409"), which were invented: no statement had been uploaded
+ * and nobody was signed in, so there was no data they could have come from.
+ * A financial figure on screen has to be a real one or not be there at all,
+ * and a decorative one is the easiest kind to mistake for real.
+ */
 const CHIPS = [
-  { label: "Swiggy", amount: "₹409", color: "#2a78d6" },
-  { label: "Blinkit", amount: "₹1,051", color: "#1baf7a" },
-  { label: "House rent", amount: "₹11,722", color: "#eda100" },
-  { label: "Uber", amount: "₹180", color: "#e87ba4" },
-  { label: "Salary", amount: "₹82,000", color: "#1baf7a" },
-  { label: "Netflix", amount: "₹649", color: "#e34948" },
-  { label: "Apollo", amount: "₹1,330", color: "#4a3aa7" },
-  { label: "IRCTC", amount: "₹2,078", color: "#2a78d6" },
-  { label: "DMart", amount: "₹3,471", color: "#eda100" },
-  { label: "Udemy", amount: "₹2,611", color: "#3987e5" },
+  { label: "Food", color: "#2a78d6" },
+  { label: "Groceries", color: "#1baf7a" },
+  { label: "Rent", color: "#eda100" },
+  { label: "Transport", color: "#e87ba4" },
+  { label: "Income", color: "#1baf7a" },
+  { label: "Entertainment", color: "#e34948" },
+  { label: "Health", color: "#4a3aa7" },
+  { label: "Shopping", color: "#2a78d6" },
+  { label: "Bills", color: "#eda100" },
+  { label: "Education", color: "#3987e5" },
 ];
 
-/** The signed-in phone, or null. */
+/** Must match MIN_PASSWORD_LENGTH in backend/app/services/accounts.py. */
+const MIN_PASSWORD_LENGTH = 8;
+
+/** The signed-in account, or null. */
 export function currentSession() {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
-    // Private browsing can make sessionStorage throw. Failing open is right:
-    // this gate protects nothing, so it must never lock anybody out.
-    return { phone: "", display_phone: "guest", degraded: true };
+    // Fails closed now. This used to return a guest session, which was right
+    // while the gate protected nothing — but the API now demands a token, so
+    // a fabricated session would render the whole app against a backend
+    // answering 401 to every request. Signing in again is the honest outcome.
+    return null;
   }
 }
 
@@ -63,35 +73,50 @@ export function clearSession() {
   }
 }
 
+/**
+ * A rough strength read-out, shown only while choosing a password.
+ *
+ * It scores length far above character variety, because length is what
+ * actually costs an attacker time. Demanding a symbol mostly produces
+ * "Passw0rd!", which is short, predictable and worse than three plain words.
+ */
+function scorePassword(password) {
+  if (!password) return { level: 0, label: "" };
+
+  let score = 0;
+  if (password.length >= MIN_PASSWORD_LENGTH) score += 1;
+  if (password.length >= 12) score += 1;
+  if (password.length >= 16) score += 1;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+  if (/\d/.test(password) || /[^\w\s]/.test(password)) score += 1;
+
+  // Anything with almost no distinct characters is weak whatever its length.
+  if (new Set(password).size < 5) score = Math.min(score, 1);
+
+  const level = Math.min(4, score);
+  const labels = ["Too short", "Weak", "Okay", "Strong", "Very strong"];
+  return { level, label: labels[level] };
+}
+
 export default function LoginPage({ onSignedIn }) {
-  const [step, setStep] = useState("phone");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [challenge, setChallenge] = useState(null);
+  const [mode, setMode] = useState("signin"); // "signin" | "signup"
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [revealed, setRevealed] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [offerSignIn, setOfferSignIn] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  const [expiresIn, setExpiresIn] = useState(0);
-  const [resendIn, setResendIn] = useState(0);
-
-  const phoneRef = useRef(null);
+  const emailRef = useRef(null);
 
   useEffect(() => {
-    if (step === "phone") phoneRef.current?.focus();
-  }, [step]);
-
-  /** One ticker drives both countdowns. */
-  useEffect(() => {
-    if (step !== "code") return undefined;
-    const timer = setInterval(() => {
-      setExpiresIn((seconds) => Math.max(0, seconds - 1));
-      setResendIn((seconds) => Math.max(0, seconds - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [step]);
+    emailRef.current?.focus();
+  }, [mode]);
 
   const chips = useMemo(
     () =>
@@ -111,60 +136,57 @@ export default function LoginPage({ onSignedIn }) {
     []
   );
 
+  const strength = useMemo(
+    () => (mode === "signup" ? scorePassword(password) : null),
+    [mode, password]
+  );
+
   function fail(message) {
     setError(message);
     setShaking(true);
     setTimeout(() => setShaking(false), 400);
   }
 
-  async function sendCode(event) {
-    event?.preventDefault();
+  function switchMode(next) {
+    setMode(next);
+    setError("");
+    setOfferSignIn(false);
+    setPassword("");
+    setRevealed(false);
+  }
+
+  async function submit(event) {
+    event.preventDefault();
     if (busy) return;
 
     setBusy(true);
     setError("");
-    try {
-      const issued = await api.requestOtp(phone);
-      setChallenge(issued);
-      setExpiresIn(issued.expires_in);
-      setResendIn(issued.resend_in);
-      setCode("");
-      setStep("code");
-    } catch (requestError) {
-      fail(requestError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    setOfferSignIn(false);
 
-  async function submitCode(submitted) {
-    const entered = (submitted ?? code).replace(/\D/g, "");
-    if (busy || entered.length < 6) return;
-
-    setBusy(true);
-    setError("");
     try {
-      const result = await api.verifyOtp(challenge.phone, entered);
-      rememberSession(result);
+      const account =
+        mode === "signup"
+          ? await api.signUp({ email, password, name })
+          : await api.signIn({ email, password });
+
+      rememberSession(account);
       setLeaving(true);
       // Let the screen finish lifting away before the dashboard mounts.
-      setTimeout(() => onSignedIn(result), 620);
-    } catch (verifyError) {
+      setTimeout(() => onSignedIn(account), 620);
+    } catch (submitError) {
       setBusy(false);
-      setCode("");
-      fail(verifyError.message);
+      // 409: the address is registered. That is a wrong-tab mistake, not a
+      // typo, so offer the fix instead of leaving them to work it out.
+      if (submitError.status === 409) setOfferSignIn(true);
+      fail(submitError.message);
     }
   }
 
-  function changeNumber() {
-    setStep("phone");
-    setCode("");
-    setError("");
-    setChallenge(null);
-  }
-
-  const minutes = Math.floor(expiresIn / 60);
-  const seconds = String(expiresIn % 60).padStart(2, "0");
+  const signingUp = mode === "signup";
+  const canSubmit =
+    email.trim() !== "" &&
+    password !== "" &&
+    (!signingUp || password.length >= MIN_PASSWORD_LENGTH);
 
   return (
     <div className={`lock ${leaving ? "unlocking" : ""}`}>
@@ -190,17 +212,13 @@ export default function LoginPage({ onSignedIn }) {
           >
             <span className="dot" style={{ background: chip.color }} />
             {chip.label}
-            <span className="amount">{chip.amount}</span>
           </span>
         ))}
       </div>
 
       <form
         className={`lock-card ${shaking ? "shake" : ""}`}
-        onSubmit={step === "phone" ? sendCode : (event) => {
-          event.preventDefault();
-          submitCode();
-        }}
+        onSubmit={submit}
         aria-labelledby="lock-title"
       >
         <div className="lock-mark" aria-hidden="true">
@@ -214,133 +232,173 @@ export default function LoginPage({ onSignedIn }) {
         <h1 className="lock-title" id="lock-title">
           Expense Tracker
         </h1>
+        <p className="lock-subtitle">
+          {signingUp
+            ? "Create an account to keep your dashboard behind a password."
+            : "Welcome back. Sign in to open your dashboard."}
+        </p>
 
-        {step === "phone" ? (
-          <div className="step stagger" key="phone">
-            <p className="lock-subtitle">
-              Sign in with your mobile number. We will send a six-digit code.
-            </p>
+        {/*
+          Tabs rather than two separate screens. The sliding indicator is one
+          element moved with a transform, so switching never reflows the card.
+        */}
+        <div className="mode-tabs" role="tablist" aria-label="Sign in or sign up">
+          <span
+            className="mode-indicator"
+            style={{ transform: `translateX(${signingUp ? "100%" : "0%"})` }}
+            aria-hidden="true"
+          />
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!signingUp}
+            className={!signingUp ? "active" : ""}
+            onClick={() => switchMode("signin")}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={signingUp}
+            className={signingUp ? "active" : ""}
+            onClick={() => switchMode("signup")}
+          >
+            Create account
+          </button>
+        </div>
 
-            <div className="lock-field phone-field">
-              <span className="country" aria-hidden="true">
-                +91
-              </span>
+        {/* key={mode} restarts the entry animation, so switching tabs reads
+            as a change rather than fields silently rewriting themselves. */}
+        <div className="step stagger" key={mode}>
+          {signingUp && (
+            <div className="lock-field">
               <input
-                ref={phoneRef}
-                id="phone"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel"
-                value={phone}
+                id="name"
+                type="text"
+                autoComplete="name"
+                value={name}
                 placeholder=" "
-                maxLength={14}
-                onChange={(event) => setPhone(event.target.value)}
-                aria-invalid={Boolean(error)}
+                maxLength={60}
+                onChange={(event) => setName(event.target.value)}
               />
-              <label htmlFor="phone">Mobile number</label>
+              <label htmlFor="name">Your name (optional)</label>
             </div>
+          )}
 
-            <button className="lock-button" type="submit" disabled={busy}>
-              {busy ? (
-                <>
-                  <span className="spinner" aria-hidden="true" />
-                  Sending…
-                </>
-              ) : (
-                "Send code"
-              )}
-            </button>
-
-            <p className="lock-error" role="alert">
-              {error}
-            </p>
-          </div>
-        ) : (
-          <div className="step stagger" key="code">
-            <p className="lock-subtitle">
-              {challenge.delivery === "sms"
-                ? "We sent a six-digit code to "
-                : "Code generated for "}
-              <strong>{challenge.display_phone}</strong>.{" "}
-              <button type="button" className="link" onClick={changeNumber}>
-                Change
-              </button>
-            </p>
-
-            {/* Only when nothing could carry the code. Once a provider is
-                configured the API stops returning it, and this disappears. */}
-            {challenge.delivery === "on_screen" && challenge.demo_code && (
-              <div className="demo-code" role="status">
-                <span>No SMS provider configured — your code is</span>
-                <strong>{challenge.demo_code}</strong>
-              </div>
-            )}
-
-            <OtpInput
-              value={code}
-              onChange={setCode}
-              onComplete={submitCode}
-              disabled={busy || expiresIn === 0}
+          <div className="lock-field">
+            <input
+              ref={emailRef}
+              id="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="off"
+              spellCheck="false"
+              value={email}
+              placeholder=" "
+              maxLength={254}
+              onChange={(event) => setEmail(event.target.value)}
+              aria-invalid={Boolean(error)}
             />
-
-            <button
-              className="lock-button"
-              type="submit"
-              disabled={busy || code.replace(/\D/g, "").length < 6}
-            >
-              {busy ? (
-                <>
-                  <span className="spinner" aria-hidden="true" />
-                  Verifying…
-                </>
-              ) : (
-                "Verify and open"
-              )}
-            </button>
-
-            <div className="code-meta">
-              {expiresIn > 0 ? (
-                <span>
-                  Expires in {minutes}:{seconds}
-                </span>
-              ) : (
-                <span className="expired">Code expired</span>
-              )}
-
-              <button
-                type="button"
-                className="link"
-                onClick={sendCode}
-                disabled={busy || resendIn > 0}
-              >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
-              </button>
-            </div>
-
-            <p className="lock-error" role="alert">
-              {error}
-            </p>
+            <label htmlFor="email">Email address</label>
           </div>
-        )}
+
+          <div className="lock-field password-field">
+            <input
+              id="password"
+              type={revealed ? "text" : "password"}
+              /* Telling the browser which one it is stops a password manager
+                 offering to overwrite a saved password during sign-in. */
+              autoComplete={signingUp ? "new-password" : "current-password"}
+              value={password}
+              placeholder=" "
+              maxLength={128}
+              onChange={(event) => setPassword(event.target.value)}
+              aria-invalid={Boolean(error)}
+            />
+            <label htmlFor="password">Password</label>
+            <button
+              type="button"
+              className="reveal"
+              onClick={() => setRevealed((shown) => !shown)}
+              aria-label={revealed ? "Hide password" : "Show password"}
+              aria-pressed={revealed}
+              tabIndex={-1}
+            >
+              {revealed ? "Hide" : "Show"}
+            </button>
+          </div>
+
+          {signingUp && (
+            <div className="strength" aria-live="polite">
+              <div className="strength-track">
+                {[0, 1, 2, 3].map((segment) => (
+                  <span
+                    key={segment}
+                    className={
+                      segment < strength.level
+                        ? `on level-${strength.level}`
+                        : ""
+                    }
+                  />
+                ))}
+              </div>
+              <span className="strength-label">
+                {password
+                  ? strength.label
+                  : `At least ${MIN_PASSWORD_LENGTH} characters`}
+              </span>
+            </div>
+          )}
+
+          <button className="lock-button" type="submit" disabled={busy || !canSubmit}>
+            {busy ? (
+              <>
+                <span className="spinner" aria-hidden="true" />
+                {signingUp ? "Creating account…" : "Signing in…"}
+              </>
+            ) : signingUp ? (
+              "Create account"
+            ) : (
+              "Sign in"
+            )}
+          </button>
+
+          <p className="lock-error" role="alert">
+            {error}
+            {offerSignIn && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => switchMode("signin")}
+                >
+                  Sign in
+                </button>
+              </>
+            )}
+          </p>
+
+          <p className="mode-switch">
+            {signingUp ? "Already have an account? " : "New here? "}
+            <button
+              type="button"
+              className="link"
+              onClick={() => switchMode(signingUp ? "signin" : "signup")}
+            >
+              {signingUp ? "Sign in" : "Create one"}
+            </button>
+          </p>
+        </div>
 
         <p className="lock-disclosure">
-          {challenge?.delivery === "sms" ? (
-            <>
-              The code was sent by SMS and is not shown here. Signing in still
-              creates no session on the server — the API answers whether you
-              sign in or not, and your transactions sit unencrypted in{" "}
-              <span className="lock-hint">backend/data/expenses.db</span>.
-            </>
-          ) : (
-            <>
-              No SMS provider is configured, so the code is shown above instead
-              of sent. Copy{" "}
-              <span className="lock-hint">backend/sms.ini.example</span> to{" "}
-              <span className="lock-hint">backend/sms.ini</span> and add your
-              provider key to send it for real. Signing in creates no session
-              either way.
-            </>
-          )}
+          Your password is stored only as a salted PBKDF2 hash, never as text.
+          Signing in still creates no session on the server, though — the API
+          answers whether you sign in or not, and your transactions sit
+          unencrypted in{" "}
+          <span className="lock-hint">backend/data/expenses.db</span>.
         </p>
       </form>
     </div>

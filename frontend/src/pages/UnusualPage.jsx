@@ -1,49 +1,47 @@
 import AnomaliesPanel from "../components/AnomaliesPanel.jsx";
+import Card, { CardHead } from "../components/ui/Card.jsx";
 
 /**
- * Flagged spending, and an honest account of how the flag is decided.
+ * Flagged spending, plus the rule written out in full.
  *
- * The method is on the page deliberately. An alert you cannot interrogate
- * gets ignored the second time it is wrong, so the rule is written out where
- * the results are.
+ * The explanation is on the page rather than in a tooltip because an alert you
+ * cannot interrogate gets ignored the second time it is wrong. Someone who can
+ * read the threshold can decide for themselves whether a flag is fair.
  */
 export default function UnusualPage({ anomalies }) {
   return (
-    <>
+    <div className="stack">
       <AnomaliesPanel anomalies={anomalies} />
 
-      <div className="card">
-        <h2>How this works</h2>
-        <p className="prose">
-          Within each category, over the trailing six months, a debit is
-          flagged when it exceeds the category average by more than 2.5
-          standard deviations. A category needs at least eight earlier
-          transactions before anything in it can be flagged — below that the
-          average means nothing.
-        </p>
-        <p className="prose">
-          The transaction being judged is left out of its own baseline, so a
-          single huge charge cannot quietly raise the bar it is measured
-          against. Where a category is a fixed subscription and the spread is
-          zero, a ratio test takes over so a genuinely large charge still
-          fires.
-        </p>
-        <p className="prose">
-          Each category is judged against itself. Rent being large is normal;
-          food being rent-sized is not.
-        </p>
-        <p className="prose">
-          This is recalculated on every visit rather than stored. The window
-          moves, so today's outlier stops being one once similar charges
-          arrive — a stored flag would go stale and nothing would recompute
-          it.
-        </p>
-        <p className="prose muted">
-          Plain statistics, not an anomaly-detection model. You need a reason
-          you can read, and the method has to be explainable without
-          hand-waving.
-        </p>
-      </div>
-    </>
+      <Card>
+        <CardHead title="How a transaction gets flagged" />
+        <div className="card-body">
+          <p className="prose">
+            Within a single category, over the trailing six months, a debit is
+            flagged when its amount exceeds the average of the others by more
+            than <strong>2.5 standard deviations</strong>. The transaction is
+            left out of its own baseline, so one very large charge cannot raise
+            the bar it is being measured against.
+          </p>
+          <p className="prose">
+            A category needs at least <strong>eight earlier transactions</strong>{" "}
+            before anything in it can be flagged. Below that the average is not
+            a description of your habits, it is an accident of which rows
+            happened to arrive first.
+          </p>
+          <p className="prose">
+            When every past amount in a category is identical — a fixed
+            subscription, say — the standard deviation is zero and no amount
+            could ever exceed the threshold. In that case the test falls back to
+            1.5× the average, so a genuinely large charge still surfaces.
+          </p>
+          <p className="prose muted">
+            Nothing here is stored. The flag depends on a moving six-month
+            window, so it is recomputed on every request — a charge that looks
+            extraordinary today stops being one once similar charges arrive.
+          </p>
+        </div>
+      </Card>
+    </div>
   );
 }

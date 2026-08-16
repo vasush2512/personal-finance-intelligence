@@ -13,13 +13,13 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.constants import UNCATEGORIZED
-from app.db import Base
-from app.ml.trainer import MIN_TRAINING_ROWS, NotEnoughData
-from app.models import Transaction
-from app.services import importer
-from app.services.importer import categorize, import_statement
-from app.services.model_service import retrain
+from app.core.s01_constants import SOURCE_NONE, UNCATEGORIZED
+from app.core.s03_db import Base
+from app.pipeline.s09_model import MIN_TRAINING_ROWS, NotEnoughData
+from app.core.s04_models import Transaction
+from app.store import s11_importer as importer
+from app.store.s11_importer import categorize, import_statement
+from app.store.s13_model_service import retrain
 
 # Merchants with enough repetition per category for a stratified split.
 TRAINING_MERCHANTS = {
@@ -189,7 +189,8 @@ def test_categorizing_works_with_no_model_file(tmp_path):
 
     assert filled == 0
     assert rows[0]["category"] == UNCATEGORIZED
-    assert rows[0]["category_source"] == "rule"
+    # No rule matched and there is no model, so nothing labelled this row.
+    assert rows[0]["category_source"] == SOURCE_NONE
 
 
 def test_a_user_label_is_never_overwritten(session, tmp_path):

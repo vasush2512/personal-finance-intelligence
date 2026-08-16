@@ -12,9 +12,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.models import Transaction
-from app.services.anomaly_service import find_anomalies
+from app.core.s03_db import Base
+from app.core.s04_models import Transaction
+from app.store.s14_anomaly_service import find_anomalies
 
 TODAY = dt.date(2026, 6, 1)
 

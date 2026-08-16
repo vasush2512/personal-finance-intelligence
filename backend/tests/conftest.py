@@ -9,7 +9,7 @@ in a tmp_path and pass its path explicitly.
 
 import pytest
 
-from app.services import importer
+from app.store import s11_importer as importer
 
 
 @pytest.fixture(autouse=True)

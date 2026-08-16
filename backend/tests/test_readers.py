@@ -13,8 +13,8 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.parser import UnparseableStatement, parse_statement
-from app.services.readers import UnreadableFile, detect_format, read_rows
+from app.pipeline.s07_parser import UnparseableStatement, parse_statement
+from app.pipeline.s06_readers import UnreadableFile, detect_format, read_rows
 
 CSV_BYTES = b"""Date,Narration,Withdrawal Amt.,Deposit Amt.
 05/05/2026,UPI/DR/412345678901/SWIGGY/HDFC/swiggy@ybl,409.50,

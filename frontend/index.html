@@ -4,6 +4,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Expense Tracker</title>
+
+    <!--
+      Tab icon. SVG rather than .ico: one file, sharp at every size a browser
+      asks for, and editable as text. Without it the browser shows its generic
+      globe, which is what a page with no identity looks like.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- Tints the browser chrome on Android and the title bar of an installed
+         PWA, so the app does not stop at the edge of the page. -->
+    <meta name="theme-color" content="#2563eb" />
+    <!--
+      Resolve the theme before the first paint.
+
+      This runs synchronously in <head>, ahead of the stylesheet and ahead of
+      React, so the correct palette is on <html> before anything is drawn. Do
+      it in React instead and a dark-mode user gets a white flash on every
+      reload — the one bug that makes a theme toggle feel cheap.
+
+      Deliberately duplicated logic (it also lives in src/theme-mode.js): this
+      file cannot import a module without becoming async, and async is exactly
+      what it must not be.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = stored === "light" || stored === "dark"
+            ? stored
+            : prefersDark ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", resolved);
+        } catch (error) {
+          // Private browsing can make localStorage throw. Light is the safe
+          // fallback; a theme preference must never stop the app loading.
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

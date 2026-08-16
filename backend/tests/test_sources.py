@@ -13,11 +13,11 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.models import Transaction
-from app.routers.transactions import build_filters
-from app.services import aggregations
-from app.services.importer import import_statement
+from app.core.s03_db import Base
+from app.core.s04_models import Transaction
+from app.routers.s18_transactions import build_filters
+from app.store import s12_aggregations as aggregations
+from app.store.s11_importer import import_statement
 
 HEADER = ["Date", "Narration", "Withdrawal Amt.", "Deposit Amt."]
 
@@ -212,7 +212,7 @@ def test_an_unknown_source_yields_zeros_not_errors(session):
 
 
 def test_deleting_an_upload_removes_it_from_the_options(session):
-    from app.models import Upload
+    from app.core.s04_models import Upload
 
     result = import_statement(session, "book.xlsx", workbook_bytes(THREE_TABS))
     session.delete(session.get(Upload, result["upload_id"]))

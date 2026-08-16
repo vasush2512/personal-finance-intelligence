@@ -12,9 +12,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.models import Transaction, Upload
-from app.services import aggregations
+from app.core.s03_db import Base
+from app.core.s04_models import Transaction, Upload
+from app.store import s12_aggregations as aggregations
 
 
 @pytest.fixture

@@ -14,9 +14,9 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.models import Transaction, Upload
-from app.services.importer import import_statement
+from app.core.s03_db import Base
+from app.core.s04_models import Transaction, Upload
+from app.store.s11_importer import import_statement
 
 # --- three different bank CSV shapes --------------------------------------
 
