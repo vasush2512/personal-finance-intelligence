@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.s02_config import FRONTEND_ORIGIN
+from app.core.s02_config import ALLOWED_ORIGIN_REGEX, ALLOWED_ORIGINS
 from app.core.s03_db import create_all
 from app.routers import (
     s17_uploads,
@@ -49,11 +49,18 @@ app = FastAPI(
 )
 
 
-# The Vite dev server runs on a different port, which makes every request
-# from it cross-origin. Localhost only — this app is never deployed.
+# The Vite dev server runs on a different port, which makes every request from
+# it cross-origin — and once the frontend is hosted separately, so is every
+# request from there. The allowed origins therefore come from configuration:
+# localhost always, plus whatever ALLOWED_ORIGINS names on the host.
+#
+# allow_credentials stays False because the session token travels in an
+# Authorization header, not a cookie. Nothing needs credentialed CORS, and
+# leaving it off means a wrong origin cannot ride along on a browser session.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN, "http://127.0.0.1:5173"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

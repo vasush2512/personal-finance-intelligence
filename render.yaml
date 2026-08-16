@@ -1,0 +1,33 @@
+# Render blueprint for the API. The frontend is not here — it goes to Vercel,
+# which reads frontend/ directly.
+#
+# Render finds this file on its own: New > Blueprint, pick this repository.
+#
+# The database is deliberately not declared as a disk. Render only attaches
+# persistent disks to paid instances, so on the free plan backend/data/ lives
+# in the container filesystem and is wiped on every deploy and every wake from
+# sleep. That is acceptable for a demo of a personal finance app and wrong for
+# anything else — see the deployment notes in README.md.
+services:
+  - type: web
+    name: expense-tracker-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # $PORT is assigned by Render, and 0.0.0.0 rather than 127.0.0.1 because
+    # the process has to be reachable from outside its own container.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # The Vercel URL, filled in from the Render dashboard after the frontend
+      # deploys — it does not exist yet at the time this service is created.
+      # sync: false means "ask me, do not store a value in the repository".
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Optional. Set to https://.*\.vercel\.app to let Vercel preview builds
+      # talk to this API as well as the production one.
+      - key: ALLOWED_ORIGIN_REGEX
+        sync: false

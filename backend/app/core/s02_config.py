@@ -4,6 +4,7 @@ Every path in the app is derived from BASE_DIR, so the app behaves the same
 whether it is started from backend/ or from the project root.
 """
 
+import os
 from pathlib import Path
 
 # backend/  —  this file is backend/app/core/s02_config.py, so the walk up is
@@ -43,6 +44,46 @@ MODEL_PATH = DATA_DIR / "model.joblib"
 
 # Vite's dev server. Used by the CORS middleware in Phase 5.
 FRONTEND_ORIGIN = "http://localhost:5173"
+
+# Both spellings of the dev server. A browser treats "localhost" and
+# "127.0.0.1" as different origins even though they are the same machine, so
+# omitting either one breaks whichever address the developer happened to type.
+LOCAL_ORIGINS = [FRONTEND_ORIGIN, "http://127.0.0.1:5173"]
+
+
+def parse_origins(raw: str | None) -> list[str]:
+    """Split an ALLOWED_ORIGINS value into origins the CORS middleware accepts.
+
+    Kept as a plain function so it can be tested without setting environment
+    variables. Blank entries are dropped and trailing slashes are stripped:
+    the Origin header a browser sends never has a trailing slash, so
+    "https://app.vercel.app/" pasted from the address bar would silently match
+    nothing and look like a server fault rather than a typo.
+    """
+    if not raw:
+        return []
+    origins = []
+    for entry in raw.split(","):
+        origin = entry.strip().rstrip("/")
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+# Deployed frontends, supplied by the host as a comma-separated list. The dev
+# origins stay in the list unconditionally so a deployed backend can still be
+# pointed at from a laptop while debugging.
+ALLOWED_ORIGINS = LOCAL_ORIGINS + [
+    origin
+    for origin in parse_origins(os.getenv("ALLOWED_ORIGINS"))
+    if origin not in LOCAL_ORIGINS
+]
+
+# Vercel gives every preview build its own hostname, so the production URL
+# alone would block every preview. Set this to something like
+# r"https://.*\.vercel\.app" to allow them. Left unset by default: a regex is
+# a wider door than a list, and it should be opened deliberately.
+ALLOWED_ORIGIN_REGEX = os.getenv("ALLOWED_ORIGIN_REGEX") or None
 
 
 def ensure_data_dir() -> None:

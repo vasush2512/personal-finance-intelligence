@@ -25,7 +25,7 @@ lakh grouping (`1,25,000.50`), and separate withdrawal/deposit columns.
 | ML | scikit-learn — TF-IDF (word + char n-grams) into LogisticRegression |
 | Data | pandas, Python `Decimal` for all money |
 | UI | React (Vite) + Recharts, plain `fetch`, no UI library |
-| Tests | pytest — 98 cases |
+| Tests | pytest — 457 cases |
 
 ## Running it
 
@@ -55,6 +55,52 @@ Then upload `backend/data/sample_statement.csv` — 205 fake transactions with
 deliberate duplicates, a junk header block and one malformed row.
 
 **Tests** (from `backend/`): `pytest`
+
+## Deploying
+
+Two hosts, because the two halves need different things: the frontend is
+static files, the backend is a Python process. Deploy in this order — each
+step needs the URL the previous one produced.
+
+**1. Backend → Render.** New > Blueprint, pick this repository; `render.yaml`
+describes the service. Copy the URL it gives you, e.g.
+`https://expense-tracker-api.onrender.com`. Check `/health` returns
+`{"status":"ok"}`.
+
+**2. Frontend → Vercel.** New Project, pick this repository, set **Root
+Directory** to `frontend`. Vercel detects Vite on its own. Add one environment
+variable before the first build:
+
+```
+VITE_API_URL = https://expense-tracker-api.onrender.com
+```
+
+No trailing slash, and it must be set *before* the build — Vite bakes the
+value into the bundle rather than reading it at run time.
+
+**3. Point the backend back at the frontend.** On Render, set
+`ALLOWED_ORIGINS` to the Vercel URL and redeploy. Until this is done the API
+answers normally and the browser silently discards every response, so the app
+looks broken with nothing in the server log. To let Vercel's preview builds
+work too, also set `ALLOWED_ORIGIN_REGEX` to `https://.*\.vercel\.app`.
+
+Routing needs no configuration: the router is hash-based, so `#/analytics` is
+still a request for `/` and no rewrite rules are involved.
+
+### What the free tier costs you
+
+**The API sleeps after 15 minutes idle.** The next visitor waits roughly a
+minute for it to wake, during which the app looks dead. Nothing is wrong.
+
+**The database is erased on every deploy.** Render only attaches persistent
+disks to paid instances, so `backend/data/` is container-local: accounts,
+transactions and the trained model all reset. Fine for a demo, unusable as a
+real ledger.
+
+Which is the reason for the rule below, and it is not a soft one: **a public
+deploy is for `sample_statement.csv` only.** Anyone can sign up, the data is
+not backed up, and it will vanish without warning. Do not put a real bank
+statement on it.
 
 ## How categorization works
 
@@ -247,5 +293,9 @@ so they can be tested and reused on their own.
 
 ## Not built, on purpose
 
-No accounts or login, no budgets or alerts, no bank API integration, no PDF
-or Excel parsing, no multi-currency, no deployment. See §3 of `PRD.md`.
+No bank API integration, no PDF parsing, no multi-currency. See §3 of
+`PRD.md`.
+
+Accounts, budgets, Excel parsing and deployment were all on this list once and
+have since been built — the list is what the project does not do, not a record
+of what it never intended to.

@@ -5,7 +5,19 @@
  * changing one line, and why an error message only has to be formatted once.
  */
 
-const BASE_URL = "http://127.0.0.1:8000";
+/**
+ * Where the API lives.
+ *
+ * `VITE_API_URL` is read at build time, not at run time — Vite substitutes the
+ * literal into the bundle, so the hosting platform must have it set before the
+ * build, not after. Unset, it falls back to the local uvicorn address, which
+ * keeps `npm run dev` working with no .env file at all.
+ *
+ * The trailing slash is stripped because every caller below writes
+ * `${BASE_URL}/api/...`, and a base ending in "/" would produce "//api/..." —
+ * which some hosts answer and others 404, a difference not worth debugging.
+ */
+const BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 /**
  * The session token, held in module scope and mirrored to sessionStorage.

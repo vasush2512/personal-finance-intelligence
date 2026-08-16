@@ -15,6 +15,12 @@ backend/data/real_*.csv
 node_modules/
 dist/
 
+# Local environment overrides. frontend/.env.example is committed; the real
+# values are not, because they differ per machine and per deployment.
+.env
+.env.local
+.env.*.local
+
 # Editors / OS
 .vscode/
 .idea/
