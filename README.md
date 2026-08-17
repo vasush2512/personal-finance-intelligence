@@ -25,7 +25,7 @@ lakh grouping (`1,25,000.50`), and separate withdrawal/deposit columns.
 | ML | scikit-learn — TF-IDF (word + char n-grams) into LogisticRegression |
 | Data | pandas, Python `Decimal` for all money |
 | UI | React (Vite) + Recharts, plain `fetch`, no UI library |
-| Tests | pytest — 457 cases |
+| Tests | pytest — 465 cases |
 
 ## Running it
 
@@ -92,15 +92,25 @@ still a request for `/` and no rewrite rules are involved.
 **The API sleeps after 15 minutes idle.** The next visitor waits roughly a
 minute for it to wake, during which the app looks dead. Nothing is wrong.
 
-**The database is erased on every deploy.** Render only attaches persistent
-disks to paid instances, so `backend/data/` is container-local: accounts,
-transactions and the trained model all reset. Fine for a demo, unusable as a
-real ledger.
+**The SQLite database is erased on every deploy.** Render only attaches
+persistent disks to paid instances, so `backend/data/` is container-local:
+accounts, transactions and the trained model all reset.
 
-Which is the reason for the rule below, and it is not a soft one: **a public
-deploy is for `sample_statement.csv` only.** Anyone can sign up, the data is
-not backed up, and it will vanish without warning. Do not put a real bank
-statement on it.
+To keep the data, add a Render PostgreSQL instance and set `DATABASE_URL` to
+its connection string. The app reads that variable and falls back to the local
+SQLite file when it is unset, so nothing about running locally changes. Paste
+the URL in whatever form Render gives you — `postgres://` and `postgresql://`
+are both rewritten to `postgresql+psycopg://` in `s02_config.py`, because we
+install psycopg 3 and a bare `postgresql://` would otherwise go looking for
+psycopg 2 and die on startup.
+
+The trained model is a `.joblib` file rather than a table, so it still lives
+on the container disk and still resets. It is rebuilt by retraining, which
+costs one click on the AI / Model page.
+
+Either way the rule below is not a soft one: **a public deploy is for
+`sample_statement.csv` only.** Anyone can sign up and the data is not backed
+up. Do not put a real bank statement on it.
 
 ## How categorization works
 

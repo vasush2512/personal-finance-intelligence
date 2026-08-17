@@ -13,9 +13,17 @@ class Base(DeclarativeBase):
     """Parent class for every model in models.py."""
 
 
-# check_same_thread=False: FastAPI serves requests from a thread pool, and the
-# default SQLite driver refuses to reuse a connection across threads.
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# check_same_thread is a SQLite driver argument and nothing else understands
+# it, so passing it to PostgreSQL raises TypeError before the first query.
+#
+# SQLite needs it because FastAPI serves requests from a thread pool and the
+# default driver refuses to reuse a connection across threads. A PostgreSQL
+# driver has no such restriction, and SQLAlchemy's connection pool already
+# does the right thing there, so the plain call is correct.
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 
 
 @event.listens_for(Engine, "connect")

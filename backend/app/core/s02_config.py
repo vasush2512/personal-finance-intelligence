@@ -34,7 +34,38 @@ BASE_DIR = _find_backend_root()
 
 DATA_DIR = BASE_DIR / "data"
 DATABASE_PATH = DATA_DIR / "expenses.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+def normalize_database_url(url: str) -> str:
+    """Point PostgreSQL URLs at the driver that is actually installed.
+
+    We install psycopg 3. SQLAlchemy resolves a bare `postgresql://` to
+    psycopg *2* — a different package, absent here — so the URL a host hands
+    out fails with `ModuleNotFoundError: No module named 'psycopg2'`, which
+    reads like a missing dependency rather than the scheme mismatch it is.
+    `postgres://` is worse: SQLAlchemy 2.x dropped that alias outright.
+
+    Rewriting the scheme is the entire fix, and doing it here means the value
+    can be wired straight through from the host — including render.yaml's
+    `fromDatabase`, which offers no opportunity to edit it by hand.
+
+    Anything else, SQLite included, is returned untouched.
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return f"postgresql+psycopg://{url[len(prefix):]}"
+    return url
+
+
+# The SQLite file is the default, not the only option. A host that provides a
+# managed database sets DATABASE_URL and the app follows it — which is the
+# difference between a demo whose data is wiped on every deploy and one that
+# keeps it. DATABASE_PATH above stays meaningful either way: it is still where
+# a local run puts its file.
+DATABASE_URL = normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        f"sqlite:///{DATABASE_PATH}",
+    )
+)
 
 SAMPLE_STATEMENT_PATH = DATA_DIR / "sample_statement.csv"
 
