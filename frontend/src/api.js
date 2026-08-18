@@ -137,6 +137,7 @@ export const API_BASE_URL = BASE_URL;
 export function getCategories() { return request("/api/categories"); }
 export function getTransactions(filters) { return request(`/api/transactions${queryString(filters)}`); }
 export function getTransaction(id) { return request(`/api/transactions/${id}`); }
+export function updateCategory(id, category) { return request(`/api/transactions/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ category }) }); }
 export function getFinancialHealth(params) { return request(`/api/financial-health${queryString(params)}`); }
 export function getDuplicates(params) { return request(`/api/duplicates${queryString(params)}`); }
 
