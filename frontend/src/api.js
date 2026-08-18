@@ -315,3 +315,8 @@ export function getSources() { return request("/api/sources"); }
 export function getSummary(params) { return request(`/api/summary${queryString(params)}`); }
 export function getTrends(params) { return request(`/api/trends${queryString(params)}`); }
 export function getAnomalies(params) { return request(`/api/anomalies${queryString(params)}`); }
+
+// Personal Expenses quick actions. These map directly to the backend routes
+// in s30_manual.py and keep all requests behind the same auth/timeout handling.
+export function getQuickExpenses() { return request("/api/quick-expenses"); }
+export function useQuickExpense(id) { return request(`/api/quick-expenses/${id}/use`, { method: "POST" }); }
