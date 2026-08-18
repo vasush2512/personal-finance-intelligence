@@ -26,16 +26,8 @@ from app.core.s01_constants import (
 )
 from app.core.s04_models import Transaction, Upload
 
-# Categories that are movements, not spending.
 NON_SPENDING = ("transfer",)
-
-# Categories that are not earnings. A refund is money returning, not money
-# made — counting it as income overstates what you actually took in, and every
-# figure derived from income (savings rate, health, the forecast) inherits
-# that error. See REFUND in constants.py for why it is not netted off
-# spending instead.
 NON_INCOME = ("transfer", REFUND)
-
 TOP_MERCHANT_LIMIT = 10
 ZERO = Decimal("0.00")
 
@@ -49,7 +41,6 @@ def month_range(month: str):
 
 
 def month_conditions(month):
-    """Filter conditions for one month, or none at all when month is None."""
     if not month:
         return []
     start, end = month_range(month)
@@ -58,36 +49,12 @@ def month_conditions(month):
 
 def source_conditions(upload_id=None, sheet=None, user_id=None, account_id=None,
                       entry_source=None):
-    """Restrict to one user, and optionally to one file or worksheet.
-
-    `user_id` rides along with the source filter rather than being a separate
-    argument threaded through twenty functions, because every one of them
-    already accepts and forwards `**source`. Adding it here means ownership
-    reaches every aggregation, trend, anomaly and detector at once — including
-    any written later, which is the part that matters.
-
-    `entry_source` narrows to statements or to manual entries. Both are the
-    same kind of row and are aggregated together by default; this exists so
-    the user can ask "what did I type in myself?" without the app keeping two
-    sets of books to answer it.
-
-    `account_id` narrows to one bank account, which is the filter people reach
-    for most once more than one statement is loaded.
-
-    `sheet=""` is not the same as `sheet=None`: the empty string means "rows
-    that came from a single-table file", which is every CSV and JSON row,
-    while None means no restriction at all.
-    """
     conditions = []
-
     if user_id is not None:
         conditions.append(Transaction.user_id == user_id)
 
     if entry_source is not None:
         if entry_source == ENTRY_STATEMENT:
-            # NULL means statement: every row imported before manual entry
-            # existed came from one, and its absence already says so. Matching
-            # only the literal string here would hide a hundred thousand rows.
             conditions.append(
                 or_(
                     Transaction.entry_source.is_(None),
@@ -99,7 +66,6 @@ def source_conditions(upload_id=None, sheet=None, user_id=None, account_id=None,
 
     if account_id is not None:
         conditions.append(Transaction.account_id == account_id)
-
     if upload_id is not None:
         conditions.append(Transaction.upload_id == upload_id)
 
@@ -108,7 +74,6 @@ def source_conditions(upload_id=None, sheet=None, user_id=None, account_id=None,
             conditions.append(Transaction.sheet_name.is_(None))
         else:
             conditions.append(Transaction.sheet_name == sheet)
-
     return conditions
 
 
@@ -127,7 +92,6 @@ def income_conditions():
 
 
 def _total(session: Session, conditions):
-    """SUM over a filtered set, as Decimal. Empty set means 0.00, not None."""
     total = session.execute(
         select(func.sum(Transaction.amount)).where(*conditions)
     ).scalar()
@@ -157,7 +121,6 @@ def transaction_count(session: Session, month=None, **source) -> int:
 
 
 def totals_by_category(session: Session, month=None, **source):
-    """Spending per category, biggest first."""
     rows = session.execute(
         select(
             Transaction.category,
@@ -177,27 +140,19 @@ def totals_by_category(session: Session, month=None, **source):
 
 
 def merchant_name(normalized_description: str) -> str:
-    """First word of the normalized narration, used as the merchant.
-
-    'blinkit groceries' -> 'blinkit'. Crude but effective on real narrations,
-    where the merchant almost always leads. It does mislabel a few rows
-    ('house rent march' -> 'house'), which is why this is a display-only
-    grouping and never a stored field.
-    """
     words = (normalized_description or "").split()
     return words[0] if words else "unknown"
 
 
-def _merchant_expression():
-    """The same first-word rule as merchant_name(), expressed in SQL.
-
-    Doing it here rather than in Python is what keeps this query from
-    dragging every spending row into memory just to read its first word.
-    A space at position n means the merchant is the first n-1 characters;
-    no space means the whole string is the merchant.
-    """
+def _merchant_expression(session: Session):
+    """Build the first-word merchant expression for the active database."""
     description = Transaction.normalized_description
-    space_at = func.instr(description, " ")
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        space_at = func.strpos(description, " ")
+    else:
+        space_at = func.instr(description, " ")
+
     return case(
         (description == "", "unknown"),
         (space_at > 0, func.substr(description, 1, space_at - 1)),
@@ -206,8 +161,7 @@ def _merchant_expression():
 
 
 def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT, **source):
-    """Biggest merchants by total spend."""
-    merchant = _merchant_expression()
+    merchant = _merchant_expression(session)
 
     rows = session.execute(
         select(merchant, func.sum(Transaction.amount), func.count(Transaction.id))
@@ -224,13 +178,6 @@ def top_merchants(session: Session, month=None, limit=TOP_MERCHANT_LIMIT, **sour
 
 
 def counts_by_category_source(session: Session, month=None, **source):
-    """How many rows each labeller is responsible for.
-
-    'rule' / 'model' / 'user' is the story of how the categorization is
-    doing: rules cover the obvious merchants, the model reaches the ones no
-    rule names, and a growing 'user' count is the training data that makes
-    the accuracy figure mean something.
-    """
     rows = session.execute(
         select(Transaction.category_source, func.count(Transaction.id))
         .where(*(month_conditions(month) + source_conditions(**source)))
@@ -245,16 +192,6 @@ def counts_by_category_source(session: Session, month=None, **source):
 
 
 def category_counts(session: Session, user_id=None):
-    """Every category in the vocabulary, with how many rows carry it.
-
-    All twelve are returned, including the empty ones, because two callers
-    need different halves: the filter shows only categories that have rows,
-    while the table's dropdown has to offer every category — you cannot move
-    a transaction into a category that no row uses yet if it is not listed.
-
-    Unlike the spending breakdown this counts transfers and income too. They
-    are excluded from totals, not from existence.
-    """
     counted = dict(
         session.execute(
             select(Transaction.category, func.count(Transaction.id))
@@ -270,12 +207,6 @@ def category_counts(session: Session, user_id=None):
 
 
 def sources(session: Session, user_id=None):
-    """Every upload that still has rows, with its sheets and their counts.
-
-    Uploads that imported nothing are left out: a re-upload of a statement
-    you already had is a real event, but it is not a place transactions can
-    be filtered to, and listing it would give the filter dead options.
-    """
     rows = session.execute(
         select(
             Upload.id,
@@ -285,9 +216,6 @@ def sources(session: Session, user_id=None):
             func.count(Transaction.id),
         )
         .join(Transaction, Transaction.upload_id == Upload.id)
-        # Scoped on the transactions rather than on Upload.user_id: the rows
-        # are what the filter actually selects, and an upload with none of the
-        # caller's rows in it is not a source they can filter to.
         .where(*source_conditions(user_id=user_id))
         .group_by(Upload.id, Transaction.sheet_name)
         .order_by(Upload.uploaded_at.desc(), Transaction.sheet_name)
@@ -312,12 +240,6 @@ def sources(session: Session, user_id=None):
 
 
 def summary(session: Session, month=None, **source) -> dict:
-    """Everything the summary cards and the category chart need.
-
-    The source filter reaches every number here, not just the table below
-    them. A dashboard where the filter moves the list but leaves the totals
-    describing the whole database is worse than one with no filter at all.
-    """
     spent = total_spent(session, month, **source)
     income = total_income(session, month, **source)
 
@@ -333,13 +255,12 @@ def summary(session: Session, month=None, **source) -> dict:
 
 
 def monthly_trends(session: Session, **source):
-    """Spend and income per month, oldest first.
-
-    Months with no transactions are not invented - the chart shows the
-    months the statements actually cover, and under a source filter that
-    means the months that file covers.
-    """
-    month_column = func.strftime("%Y-%m", Transaction.date)
+    """Spend and income per month, using the active database's date function."""
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        month_column = func.to_char(Transaction.date, "YYYY-MM")
+    else:
+        month_column = func.strftime("%Y-%m", Transaction.date)
 
     rows = session.execute(
         select(month_column, Transaction.direction, func.sum(Transaction.amount))
