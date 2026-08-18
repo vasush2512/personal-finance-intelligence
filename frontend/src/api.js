@@ -69,6 +69,8 @@ async function request(path, options = {}) {
       error.status = response.status;
       throw error;
     }
+    // Several successful DELETE endpoints intentionally return 204 No Content.
+    if (response.status === 204) return null;
     return response.json();
   } catch (error) {
     if (error?.name === "AbortError") {
@@ -275,7 +277,16 @@ export async function deleteAccount(id) {
     error.status = response.status;
     throw error;
   }
-  return true;
+  return response.json();
+}
+
+// Accounts: assign all transactions from an uploaded statement to an account.
+export function assignStatement({ uploadId, accountId }) {
+  return request("/api/accounts/assign", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ upload_id: uploadId, account_id: accountId }),
+  });
 }
 
 export async function uploadStatement(file, onProgress) {
@@ -320,3 +331,48 @@ export function getAnomalies(params) { return request(`/api/anomalies${queryStri
 // in s30_manual.py and keep all requests behind the same auth/timeout handling.
 export function getQuickExpenses() { return request("/api/quick-expenses"); }
 export function useQuickExpense(id) { return request(`/api/quick-expenses/${id}/use`, { method: "POST" }); }
+
+// User-created categorisation rules.
+export function getRules() { return request("/api/rules"); }
+export function previewRule(keyword) {
+  return request(`/api/rules/preview${queryString({ keyword })}`);
+}
+export function createRule({ keyword, category, priority = null }) {
+  return request("/api/rules", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ keyword, category, priority }),
+  });
+}
+export function updateRule(id, changes) {
+  return request(`/api/rules/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(changes),
+  });
+}
+export function applyRule(id, onlyUncategorised = true) {
+  return request(`/api/rules/${id}/apply${queryString({ only_uncategorised: onlyUncategorised })}`, {
+    method: "POST",
+  });
+}
+export function deleteRule(id) {
+  return request(`/api/rules/${id}`, { method: "DELETE" });
+}
+
+// Data quality checks and the one safe automatic repair.
+export function getDataQuality(params) {
+  return request(`/api/data-quality${queryString(params)}`);
+}
+export function fixDataQuality(issue, params) {
+  return request(`/api/data-quality/fix${queryString(params)}`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ issue }),
+  });
+}
+
+// Model training is deliberately explicit; it refits the classifier on stored labels.
+export function retrainModel() {
+  return request("/api/model/retrain", { method: "POST" });
+}
