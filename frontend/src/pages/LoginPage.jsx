@@ -17,6 +17,7 @@ import "../login.css";
  */
 
 const STORAGE_KEY = "expense-tracker-session";
+const POST_LOGIN_TRANSITION_MS = 220;
 
 /**
  * Decoration for the sign-in background.
@@ -49,10 +50,6 @@ export function currentSession() {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
-    // Fails closed now. This used to return a guest session, which was right
-    // while the gate protected nothing — but the API now demands a token, so
-    // a fabricated session would render the whole app against a backend
-    // answering 401 to every request. Signing in again is the honest outcome.
     return null;
   }
 }
@@ -73,13 +70,6 @@ export function clearSession() {
   }
 }
 
-/**
- * A rough strength read-out, shown only while choosing a password.
- *
- * It scores length far above character variety, because length is what
- * actually costs an attacker time. Demanding a symbol mostly produces
- * "Passw0rd!", which is short, predictable and worse than three plain words.
- */
 function scorePassword(password) {
   if (!password) return { level: 0, label: "" };
 
@@ -90,7 +80,6 @@ function scorePassword(password) {
   if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
   if (/\d/.test(password) || /[^\w\s]/.test(password)) score += 1;
 
-  // Anything with almost no distinct characters is weak whatever its length.
   if (new Set(password).size < 5) score = Math.min(score, 1);
 
   const level = Math.min(4, score);
@@ -99,13 +88,11 @@ function scorePassword(password) {
 }
 
 export default function LoginPage({ onSignedIn }) {
-  const [mode, setMode] = useState("signin"); // "signin" | "signup"
-
+  const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [revealed, setRevealed] = useState(false);
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [offerSignIn, setOfferSignIn] = useState(false);
@@ -121,15 +108,12 @@ export default function LoginPage({ onSignedIn }) {
   const chips = useMemo(
     () =>
       CHIPS.map((chip, index) => {
-        // Two bands down the sides, leaving the middle clear for the card.
         const onLeft = index % 2 === 0;
         const offset = ((index * 7) % 18) - 9;
         return {
           ...chip,
           left: `${(onLeft ? 16 : 84) + offset}%`,
           duration: `${17 + ((index * 3.1) % 11)}s`,
-          // Negative delays start each chip partway through its loop, so the
-          // screen is already populated on the first frame.
           delay: `${-(index * 2.3).toFixed(1)}s`,
         };
       }),
@@ -171,12 +155,9 @@ export default function LoginPage({ onSignedIn }) {
 
       rememberSession(account);
       setLeaving(true);
-      // Let the screen finish lifting away before the dashboard mounts.
-      setTimeout(() => onSignedIn(account), 620);
+      setTimeout(() => onSignedIn(account), POST_LOGIN_TRANSITION_MS);
     } catch (submitError) {
       setBusy(false);
-      // 409: the address is registered. That is a wrong-tab mistake, not a
-      // typo, so offer the fix instead of leaving them to work it out.
       if (submitError.status === 409) setOfferSignIn(true);
       fail(submitError.message);
     }
@@ -238,10 +219,6 @@ export default function LoginPage({ onSignedIn }) {
             : "Welcome back. Sign in to open your dashboard."}
         </p>
 
-        {/*
-          Tabs rather than two separate screens. The sliding indicator is one
-          element moved with a transform, so switching never reflows the card.
-        */}
         <div className="mode-tabs" role="tablist" aria-label="Sign in or sign up">
           <span
             className="mode-indicator"
@@ -268,8 +245,6 @@ export default function LoginPage({ onSignedIn }) {
           </button>
         </div>
 
-        {/* key={mode} restarts the entry animation, so switching tabs reads
-            as a change rather than fields silently rewriting themselves. */}
         <div className="step stagger" key={mode}>
           {signingUp && (
             <div className="lock-field">
@@ -308,8 +283,6 @@ export default function LoginPage({ onSignedIn }) {
             <input
               id="password"
               type={revealed ? "text" : "password"}
-              /* Telling the browser which one it is stops a password manager
-                 offering to overwrite a saved password during sign-in. */
               autoComplete={signingUp ? "new-password" : "current-password"}
               value={password}
               placeholder=" "
@@ -397,8 +370,7 @@ export default function LoginPage({ onSignedIn }) {
           Your password is stored only as a salted PBKDF2 hash, never as text.
           Signing in still creates no session on the server, though — the API
           answers whether you sign in or not, and your transactions sit
-          unencrypted in{" "}
-          <span className="lock-hint">backend/data/expenses.db</span>.
+          unencrypted in <span className="lock-hint">backend/data/expenses.db</span>.
         </p>
       </form>
     </div>
