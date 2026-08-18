@@ -1,6 +1,7 @@
 const BASE_URL = (import.meta.env.VITE_API_URL || "https://personal-finance-intelligence.onrender.com").replace(/\/+$/, "");
 
 const TOKEN_KEY = "expense-tracker-token";
+const REQUEST_TIMEOUT_MS = 45_000;
 
 let authToken = null;
 try {
@@ -54,16 +55,41 @@ async function describeFailure(response) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) },
-  });
-  if (!response.ok) {
-    const error = new Error(await describeFailure(response));
-    error.status = response.status;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: { ...authHeaders(), ...(options.headers || {}) },
+    });
+    if (!response.ok) {
+      const error = new Error(await describeFailure(response));
+      error.status = response.status;
+      throw error;
+    }
+    return response.json();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const timeoutError = new Error(
+        "The backend is taking too long to respond. Please try again in a few seconds."
+      );
+      timeoutError.code = "REQUEST_TIMEOUT";
+      timeoutError.status = 408;
+      throw timeoutError;
+    }
+    if (error instanceof TypeError) {
+      const connectionError = new Error(
+        "Could not reach the backend. Please check the connection and try again."
+      );
+      connectionError.code = "NETWORK_ERROR";
+      throw connectionError;
+    }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.json();
 }
 
 function queryString(params) {
